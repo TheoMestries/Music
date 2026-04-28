@@ -1,13 +1,10 @@
-const storageKey = "music-campaigns-v1";
-const audioDbName = "music-campaigns-audio";
-const audioStoreName = "audio-files";
+const apiEndpoint = "api.php";
 
 const state = {
-  campaigns: loadCampaigns(),
+  campaigns: [],
   activeCampaignId: null,
   selectedFolderId: "root",
   selectedPlaylistId: null,
-  audioUrls: new Map(),
 };
 
 const campaignForm = document.querySelector("#campaign-form");
@@ -204,8 +201,11 @@ libraryTree.addEventListener("dragover", (event) => {
     return;
   }
 
-  const placement = getHorizontalDropPlacement(playlistTile, event.clientX);
-  playlistTile.classList.add(placement === "before" ? "drop-before" : "drop-after");
+  if (playlistTile) {
+    const placement = getHorizontalDropPlacement(playlistTile, event.clientX);
+    playlistTile.classList.add(placement === "before" ? "drop-before" : "drop-after");
+    return;
+  }
 
   if (folderButton && folderButton.dataset.folderSelect !== "root") {
     const placement = getDropPlacement(folderButton, event.clientY);
@@ -342,7 +342,12 @@ trackForm.addEventListener("submit", async (event) => {
     fileSize: file.size,
   };
 
-  await saveAudioFile(trackId, file);
+  try {
+    track.audioUrl = await saveAudioFile(trackId, file);
+  } catch (error) {
+    showBackendError(error);
+    return;
+  }
 
   if (trackPlaylist.value === "root") {
     campaign.tracks.push(track);
@@ -359,12 +364,13 @@ trackForm.addEventListener("submit", async (event) => {
   closeModal("track-modal");
 });
 
-function loadCampaigns() {
-  try {
-    return normalizeCampaigns(JSON.parse(localStorage.getItem(storageKey)) ?? []);
-  } catch {
-    return [];
+async function loadCampaigns() {
+  const response = await fetch(`${apiEndpoint}?action=load`);
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Impossible de charger les campagnes.");
   }
+  return normalizeCampaigns(payload.campaigns ?? []);
 }
 
 function normalizeCampaigns(campaigns) {
@@ -393,15 +399,28 @@ function normalizeTrack(track) {
   return {
     ...track,
     loop: track.loop ?? false,
+    audioUrl: track.audioUrl ?? null,
   };
 }
 
-function saveCampaigns() {
-  localStorage.setItem(storageKey, JSON.stringify(state.campaigns));
+async function saveCampaigns() {
+  const response = await fetch(`${apiEndpoint}?action=save`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      campaigns: state.campaigns,
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Impossible de sauvegarder les campagnes.");
+  }
 }
 
 function persistAndRender() {
-  saveCampaigns();
+  saveCampaigns().catch(showBackendError);
   render();
 }
 
@@ -412,6 +431,20 @@ function render() {
   if (!state.activeCampaignId) {
     openCampaignModal();
   }
+}
+
+async function initializeApp() {
+  try {
+    state.campaigns = await loadCampaigns();
+  } catch (error) {
+    showBackendError(error);
+  }
+  render();
+}
+
+function showBackendError(error) {
+  console.error(error);
+  alert(error.message || "Une erreur serveur est survenue.");
 }
 
 function renderCampaigns() {
@@ -530,14 +563,6 @@ function renderPlaylistOptions(campaign) {
 
 async function renderTree(campaign) {
   libraryTree.innerHTML = "";
-
-  if (campaign.folders.length === 0 && campaign.playlists.length === 0 && campaign.tracks.length === 0) {
-    const note = document.createElement("p");
-    note.className = "empty-note";
-    note.textContent = "Ajoute une musique, une playlist ou un dossier de tri pour structurer la campagne.";
-    libraryTree.append(note);
-    return;
-  }
 
   const interfaceView = document.createElement("div");
   interfaceView.className = "library-interface";
@@ -872,7 +897,7 @@ async function renderTrack(track, campaign, locationType, playlistId) {
   header.append(actions);
   item.append(header);
 
-  const audioUrl = await getAudioUrl(track.id);
+  const audioUrl = getAudioUrl(track);
   if (audioUrl) {
     const player = document.createElement("audio");
     player.className = "track-player";
@@ -898,7 +923,7 @@ function updatePlaylistLoop(input) {
 
   playlist.loop = input.checked;
   touch(campaign);
-  saveCampaigns();
+  saveCampaigns().catch(showBackendError);
 }
 
 function updatePlaylistAutoplay(input) {
@@ -913,7 +938,7 @@ function updatePlaylistAutoplay(input) {
   if (shuffleInput) shuffleInput.checked = playlist.autoplayShuffleOnOpen;
 
   touch(campaign);
-  saveCampaigns();
+  saveCampaigns().catch(showBackendError);
 }
 
 function updatePlaylistAutoplayShuffle(input) {
@@ -928,7 +953,7 @@ function updatePlaylistAutoplayShuffle(input) {
   if (autoplayInput) autoplayInput.checked = playlist.autoplayOnOpen;
 
   touch(campaign);
-  saveCampaigns();
+  saveCampaigns().catch(showBackendError);
 }
 
 function updateTrackLoop(input) {
@@ -949,7 +974,7 @@ function updateTrackLoop(input) {
   });
 
   touch(campaign);
-  saveCampaigns();
+  saveCampaigns().catch(showBackendError);
 }
 
 function updateTrackEverywhere(campaign, trackId, updater) {
@@ -1041,77 +1066,38 @@ function removeTrackEverywhere(campaign, trackId) {
   });
 }
 
-function openAudioDb() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(audioDbName, 1);
-
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore(audioStoreName);
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
 async function saveAudioFile(trackId, file) {
-  const db = await openAudioDb();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(audioStoreName, "readwrite");
-    transaction.objectStore(audioStoreName).put(file, trackId);
-    transaction.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-    transaction.onerror = () => {
-      db.close();
-      reject(transaction.error);
-    };
+  const formData = new FormData();
+  formData.append("trackId", trackId);
+  formData.append("audio", file);
+
+  const response = await fetch(`${apiEndpoint}?action=upload`, {
+    method: "POST",
+    body: formData,
   });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Impossible d'uploader le fichier audio.");
+  }
+  return payload.url;
 }
 
-async function getAudioFile(trackId) {
-  const db = await openAudioDb();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(audioStoreName, "readonly");
-    const request = transaction.objectStore(audioStoreName).get(trackId);
-    request.onsuccess = () => resolve(request.result ?? null);
-    request.onerror = () => reject(request.error);
-    transaction.oncomplete = () => db.close();
-  });
-}
-
-async function getAudioUrl(trackId) {
-  if (state.audioUrls.has(trackId)) return state.audioUrls.get(trackId);
-
-  const file = await getAudioFile(trackId);
-  if (!file) return null;
-
-  const url = URL.createObjectURL(file);
-  state.audioUrls.set(trackId, url);
-  return url;
+function getAudioUrl(track) {
+  return track.audioUrl ?? null;
 }
 
 async function deleteAudioFile(trackId) {
-  const existingUrl = state.audioUrls.get(trackId);
-  if (existingUrl) {
-    URL.revokeObjectURL(existingUrl);
-    state.audioUrls.delete(trackId);
-  }
-
-  const db = await openAudioDb();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(audioStoreName, "readwrite");
-    transaction.objectStore(audioStoreName).delete(trackId);
-    transaction.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-    transaction.onerror = () => {
-      db.close();
-      reject(transaction.error);
-    };
+  const response = await fetch(`${apiEndpoint}?action=deleteAudio`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ trackId }),
   });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Impossible de supprimer le fichier audio.");
+  }
 }
 
 function findTrack(campaign, trackId) {
@@ -1281,4 +1267,4 @@ function escapeHtml(value) {
   return element.innerHTML;
 }
 
-render();
+initializeApp();
