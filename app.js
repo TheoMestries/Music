@@ -33,6 +33,7 @@ const activeUpdated = document.querySelector("#active-updated");
 const campaignModal = document.querySelector("#campaign-modal");
 const campaignSwitch = document.querySelector("#campaign-switch");
 const campaignModalClose = document.querySelector("#campaign-modal-close");
+const themeToggle = document.querySelector("#theme-toggle");
 const folderModal = document.querySelector("#folder-modal");
 const playlistModal = document.querySelector("#playlist-modal");
 const trackModal = document.querySelector("#track-modal");
@@ -41,6 +42,8 @@ const renameForm = document.querySelector("#rename-form");
 const renameName = document.querySelector("#rename-name");
 const renameLabel = document.querySelector("#rename-label");
 
+initializeTheme();
+themeToggle.addEventListener("click", toggleTheme);
 campaignSwitch.addEventListener("click", () => openCampaignModal());
 campaignModalClose.addEventListener("click", () => closeCampaignModal());
 campaignModal.addEventListener("click", (event) => {
@@ -521,6 +524,23 @@ async function initializeApp() {
 function showBackendError(error) {
   console.error(error);
   alert(error.message || "Une erreur serveur est survenue.");
+}
+
+function initializeTheme() {
+  const savedTheme = localStorage.getItem("suszic-theme") ?? "light";
+  document.documentElement.dataset.theme = savedTheme;
+  updateThemeToggle(savedTheme);
+}
+
+function toggleTheme() {
+  const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = nextTheme;
+  localStorage.setItem("suszic-theme", nextTheme);
+  updateThemeToggle(nextTheme);
+}
+
+function updateThemeToggle(theme) {
+  themeToggle.textContent = theme === "dark" ? "Mode clair" : "Mode sombre";
 }
 
 function createId() {

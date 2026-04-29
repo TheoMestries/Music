@@ -11,6 +11,37 @@
   --warm: #b8573f;
   --focus: #173b66;
   --shadow: 0 18px 50px rgba(32, 37, 35, 0.12);
+  --app-gradient: rgba(31, 122, 107, 0.08);
+  --panel-red: #fffaf6;
+  --panel-yellow: #fffdf2;
+  --panel-blue: #f9fbff;
+  --tile-hover: rgba(255, 246, 176, 0.48);
+  --folder-hover: #fff1ed;
+  --track-bg: #f8f7f3;
+  --modal-backdrop: rgba(31, 37, 35, 0.48);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111412;
+  --surface: #1b211f;
+  --surface-muted: #242b28;
+  --ink: #f4f0e8;
+  --muted: #a8b4af;
+  --line: #3c4541;
+  --accent: #58b7a4;
+  --accent-dark: #3e927f;
+  --warm: #d3856e;
+  --focus: #8db7e8;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
+  --app-gradient: rgba(88, 183, 164, 0.08);
+  --panel-red: #1e1715;
+  --panel-yellow: #1e1d14;
+  --panel-blue: #151b22;
+  --tile-hover: rgba(88, 183, 164, 0.14);
+  --folder-hover: rgba(211, 133, 110, 0.14);
+  --track-bg: #222825;
+  --modal-backdrop: rgba(0, 0, 0, 0.68);
 }
 
 * {
@@ -21,7 +52,7 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    linear-gradient(120deg, rgba(31, 122, 107, 0.08), transparent 36%),
+    linear-gradient(120deg, var(--app-gradient), transparent 36%),
     var(--bg);
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -43,6 +74,12 @@ select {
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 28px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .brand {
@@ -221,7 +258,7 @@ select:focus {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(31, 37, 35, 0.48);
+  background: var(--modal-backdrop);
 }
 
 .campaign-modal-panel {
@@ -352,7 +389,7 @@ select:focus {
 .library {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
   box-shadow: 0 10px 24px rgba(32, 37, 35, 0.05);
 }
 
@@ -390,18 +427,18 @@ select:focus {
   flex-direction: column;
   gap: 10px;
   border-right: 2px solid #d8473d;
-  background: #fffaf6;
+  background: var(--panel-red);
 }
 
 .playlist-panel {
   border-right: 2px solid #d9be18;
-  background: #fffdf2;
+  background: var(--panel-yellow);
 }
 
 .playlist-detail-panel {
   position: relative;
   z-index: 5;
-  background: #f9fbff;
+  background: var(--panel-blue);
   overflow: visible;
 }
 
@@ -475,7 +512,7 @@ select:focus {
   height: 28px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
   color: var(--ink);
   cursor: pointer;
   font-size: 16px;
@@ -490,7 +527,7 @@ select:focus {
 .folder-button:hover,
 .folder-button.active {
   border-color: var(--warm);
-  background: #fff1ed;
+  background: var(--folder-hover);
 }
 
 .folder-button[draggable="true"] {
@@ -572,7 +609,7 @@ select:focus {
   height: 28px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.68);
+  background: color-mix(in srgb, var(--surface) 68%, transparent);
   color: var(--ink);
   cursor: pointer;
   font-size: 16px;
@@ -606,7 +643,7 @@ select:focus {
   min-height: 36px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #f8f7f3;
+  background: var(--track-bg);
   color: var(--ink);
   cursor: pointer;
   text-align: left;
@@ -634,7 +671,7 @@ select:focus {
 .playlist-tile:hover,
 .playlist-tile.active {
   border-color: #c6b21f;
-  background: rgba(255, 246, 176, 0.48);
+  background: var(--tile-hover);
 }
 
 .playlist-tile.dragging {
@@ -656,7 +693,7 @@ select:focus {
   aspect-ratio: 1;
   border-radius: 50%;
   background:
-    radial-gradient(circle, #fffdf2 0 15%, #262b29 16% 28%, #111 29% 40%, #3d3d3d 41% 58%, #111 59%);
+    radial-gradient(circle, var(--panel-yellow) 0 15%, #262b29 16% 28%, #111 29% 40%, #3d3d3d 41% 58%, #111 59%);
   box-shadow: 0 8px 18px rgba(32, 37, 35, 0.12);
 }
 
@@ -680,7 +717,7 @@ select:focus {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.68);
+  background: color-mix(in srgb, var(--surface) 68%, transparent);
 }
 
 .playlist-detail-list {
@@ -697,7 +734,7 @@ select:focus {
   border: 2px solid var(--line);
   border-radius: 8px;
   padding: 12px !important;
-  background: #fff;
+  background: var(--surface);
   cursor: grab;
   overflow: visible;
 }
@@ -839,7 +876,7 @@ select:focus {
   min-height: 34px;
   border-radius: 8px;
   padding: 8px 10px;
-  background: #f8f7f3;
+  background: var(--track-bg);
 }
 
 .track-title {
@@ -905,7 +942,7 @@ select:focus {
   min-height: 36px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #f8f7f3;
+  background: var(--track-bg);
   color: var(--ink);
   cursor: pointer;
   text-align: left;
