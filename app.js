@@ -5,6 +5,8 @@ const state = {
   activeCampaignId: null,
   selectedFolderId: "root",
   selectedPlaylistId: null,
+  dragType: null,
+  renameTarget: null,
 };
 
 const campaignForm = document.querySelector("#campaign-form");
@@ -34,6 +36,10 @@ const campaignModalClose = document.querySelector("#campaign-modal-close");
 const folderModal = document.querySelector("#folder-modal");
 const playlistModal = document.querySelector("#playlist-modal");
 const trackModal = document.querySelector("#track-modal");
+const renameModal = document.querySelector("#rename-modal");
+const renameForm = document.querySelector("#rename-form");
+const renameName = document.querySelector("#rename-name");
+const renameLabel = document.querySelector("#rename-label");
 
 campaignSwitch.addEventListener("click", () => openCampaignModal());
 campaignModalClose.addEventListener("click", () => closeCampaignModal());
@@ -48,7 +54,7 @@ document.addEventListener("click", (event) => {
     closeModal(closeButton.dataset.closeModal);
   }
 
-  if ([folderModal, playlistModal, trackModal].includes(event.target)) {
+  if ([folderModal, playlistModal, trackModal, renameModal].includes(event.target)) {
     closeModal(event.target.id);
   }
 });
@@ -57,6 +63,10 @@ libraryTree.addEventListener("click", (event) => {
   const openFolderModalButton = event.target.closest("[data-open-folder-modal]");
   const openPlaylistModalButton = event.target.closest("[data-open-playlist-modal]");
   const openTrackModalButton = event.target.closest("[data-open-track-modal]");
+  const folderMenuButton = event.target.closest("[data-folder-menu]");
+  const folderAction = event.target.closest("[data-folder-action]");
+  const playlistMenuButton = event.target.closest("[data-playlist-menu]");
+  const playlistAction = event.target.closest("[data-playlist-action]");
   const folderButton = event.target.closest("[data-folder-select]");
   const playlistButton = event.target.closest("[data-playlist-select]");
   const actionButton = event.target.closest("[data-track-menu]");
@@ -64,6 +74,8 @@ libraryTree.addEventListener("click", (event) => {
   const playPlaylistButton = event.target.closest("[data-play-playlist]");
   const shufflePlaylistButton = event.target.closest("[data-shuffle-playlist]");
   const panel = event.target.closest(".track-action-panel");
+  const playlistPanel = event.target.closest(".playlist-action-panel");
+  const folderPanel = event.target.closest(".folder-action-panel");
 
   if (openFolderModalButton) {
     openFolderModal();
@@ -79,6 +91,40 @@ libraryTree.addEventListener("click", (event) => {
     openTrackModal();
     return;
   }
+
+  if (folderMenuButton) {
+    toggleFolderMenu(folderMenuButton);
+    return;
+  }
+
+  if (folderAction) {
+    handleFolderAction(folderAction);
+    return;
+  }
+
+  if (playlistMenuButton) {
+    togglePlaylistMenu(playlistMenuButton);
+    return;
+  }
+
+  if (playlistAction) {
+    handlePlaylistAction(playlistAction);
+    return;
+  }
+
+  if (actionButton) {
+    toggleTrackMenu(actionButton);
+    return;
+  }
+
+  if (action) {
+    handleTrackAction(action);
+    return;
+  }
+
+  if (folderPanel) return;
+  if (playlistPanel) return;
+  if (panel) return;
 
   if (folderButton) {
     state.selectedFolderId = folderButton.dataset.folderSelect;
@@ -103,19 +149,8 @@ libraryTree.addEventListener("click", (event) => {
     return;
   }
 
-  if (actionButton) {
-    toggleTrackMenu(actionButton);
-    return;
-  }
-
-  if (action) {
-    handleTrackAction(action);
-    return;
-  }
-
-  if (panel) return;
-
   closeTrackMenus();
+  closePlaylistMenus();
 });
 
 libraryTree.addEventListener("change", (event) => {
@@ -144,6 +179,18 @@ libraryTree.addEventListener("change", (event) => {
   }
 });
 
+libraryTree.addEventListener("pointerdown", (event) => {
+  const interactiveControl = event.target.closest("button, input, select, audio, a, label, .track-action-panel, .track-actions");
+  const draggableTrack = event.target.closest(".detail-track");
+  if (!interactiveControl || !draggableTrack) return;
+
+  event.stopPropagation();
+  draggableTrack.draggable = false;
+});
+
+libraryTree.addEventListener("pointerup", restoreDraggableTracks);
+libraryTree.addEventListener("pointercancel", restoreDraggableTracks);
+
 libraryTree.addEventListener("dragstart", (event) => {
   const row = event.target.closest(".detail-track");
   const playlistTile = event.target.closest(".playlist-tile");
@@ -154,7 +201,18 @@ libraryTree.addEventListener("dragstart", (event) => {
     return;
   }
 
+  if (playlistTile && event.target.closest("button, input, select, label, .playlist-actions")) {
+    event.preventDefault();
+    return;
+  }
+
+  if (folderButton && event.target.closest("button, input, select, label, .folder-actions")) {
+    event.preventDefault();
+    return;
+  }
+
   if (row) {
+    state.dragType = "track";
     row.classList.add("dragging");
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", JSON.stringify({
@@ -166,6 +224,7 @@ libraryTree.addEventListener("dragstart", (event) => {
   }
 
   if (playlistTile) {
+    state.dragType = "playlist";
     playlistTile.classList.add("dragging");
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", JSON.stringify({
@@ -177,6 +236,7 @@ libraryTree.addEventListener("dragstart", (event) => {
   }
 
   if (folderButton && folderButton.dataset.folderSelect !== "root") {
+    state.dragType = "folder";
     folderButton.classList.add("dragging");
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", JSON.stringify({
@@ -207,7 +267,12 @@ libraryTree.addEventListener("dragover", (event) => {
     return;
   }
 
-  if (folderButton && folderButton.dataset.folderSelect !== "root") {
+  if (folderButton && state.dragType === "playlist") {
+    folderButton.classList.add("drop-target");
+    return;
+  }
+
+  if (folderButton && state.dragType === "folder" && folderButton.dataset.folderSelect !== "root") {
     const placement = getDropPlacement(folderButton, event.clientY);
     folderButton.classList.add(placement === "before" ? "drop-before" : "drop-after");
   }
@@ -239,12 +304,17 @@ libraryTree.addEventListener("drop", (event) => {
     reorderPlaylistInSelectedFolder(payload.folderId, payload.playlistId, playlistTile.dataset.playlistSelect, placement);
   }
 
+  if (payload.type === "playlist" && folderButton) {
+    movePlaylistToFolder(payload.folderId, payload.playlistId, folderButton.dataset.folderSelect);
+  }
+
   if (payload.type === "folder" && folderButton && folderButton.dataset.folderSelect !== "root") {
     const placement = getDropPlacement(folderButton, event.clientY);
     reorderFolder(payload.folderId, folderButton.dataset.folderSelect, placement);
   }
 
   clearDropMarkers();
+  state.dragType = null;
 });
 
 libraryTree.addEventListener("dragend", () => {
@@ -252,6 +322,7 @@ libraryTree.addEventListener("dragend", () => {
   document.querySelectorAll(".detail-track.dragging").forEach((row) => row.classList.remove("dragging"));
   document.querySelectorAll(".playlist-tile.dragging").forEach((tile) => tile.classList.remove("dragging"));
   document.querySelectorAll(".folder-button.dragging").forEach((button) => button.classList.remove("dragging"));
+  state.dragType = null;
 });
 
 campaignForm.addEventListener("submit", (event) => {
@@ -362,6 +433,11 @@ trackForm.addEventListener("submit", async (event) => {
   touch(campaign);
   persistAndRender();
   closeModal("track-modal");
+});
+
+renameForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  applyRename();
 });
 
 async function loadCampaigns() {
@@ -535,6 +611,52 @@ function closeModal(modalId) {
   document.querySelector(`#${modalId}`)?.classList.add("hidden");
 }
 
+function openRenameModal(type, id, currentName) {
+  state.renameTarget = { type, id };
+  const labels = {
+    folder: "Nom du dossier",
+    playlist: "Nom de la playlist",
+    track: "Nom de la musique",
+  };
+  renameLabel.textContent = labels[type] ?? "Nom";
+  renameName.value = currentName;
+  openModal("rename-modal");
+  renameName.focus();
+  renameName.select();
+}
+
+function applyRename() {
+  const campaign = getActiveCampaign();
+  const target = state.renameTarget;
+  const name = renameName.value.trim();
+  if (!campaign || !target || !name) return;
+
+  if (target.type === "folder") {
+    if (target.id === "root") {
+      closeModal("rename-modal");
+      return;
+    }
+    const folder = campaign.folders.find((item) => item.id === target.id);
+    if (folder) folder.name = name;
+  }
+
+  if (target.type === "playlist") {
+    const playlist = findPlaylist(campaign, target.id);
+    if (playlist) playlist.name = name;
+  }
+
+  if (target.type === "track") {
+    updateTrackEverywhere(campaign, target.id, (track) => {
+      track.title = name;
+    });
+  }
+
+  state.renameTarget = null;
+  touch(campaign);
+  persistAndRender();
+  closeModal("rename-modal");
+}
+
 async function renderActiveCampaign() {
   const campaign = getActiveCampaign();
   emptyState.classList.toggle("hidden", Boolean(campaign));
@@ -602,7 +724,7 @@ function ensureSelection(campaign) {
 
   const playlists = getSelectedFolderPlaylists(campaign);
   if (!playlists.some((playlist) => playlist.id === state.selectedPlaylistId)) {
-    state.selectedPlaylistId = playlists[0]?.id ?? null;
+    state.selectedPlaylistId = null;
   }
 }
 
@@ -625,13 +747,24 @@ function renderFolderPanel(campaign) {
 }
 
 function renderFolderButton(folderId, name, playlistCount) {
-  const button = document.createElement("button");
-  button.type = "button";
+  const button = document.createElement("div");
   button.className = `folder-button${state.selectedFolderId === folderId ? " active" : ""}`;
   button.draggable = folderId !== "root";
   button.dataset.folderSelect = folderId;
+  button.role = "button";
+  button.tabIndex = 0;
   button.innerHTML = `
-    <span>${escapeHtml(name)}</span>
+    <div class="folder-button-header">
+      <span>${escapeHtml(name)}</span>
+      <div class="folder-actions">
+        <button type="button" class="folder-menu-button" data-folder-menu aria-label="Actions pour ${escapeHtml(name)}">⋮</button>
+        <div class="folder-action-panel hidden">
+          <button type="button" data-folder-action="rename" ${folderId === "root" ? "disabled" : ""}>Modifier le nom</button>
+          <button type="button" data-folder-action="duplicate" ${folderId === "root" ? "disabled" : ""}>Duppliquer le dossier</button>
+          <button type="button" data-folder-action="delete" ${folderId === "root" ? "disabled" : ""}>Supprimer le dossier</button>
+        </div>
+      </div>
+    </div>
     <small>${playlistCount} playlist${playlistCount > 1 ? "s" : ""}</small>
   `;
   return button;
@@ -658,16 +791,37 @@ function renderPlaylistPanel(campaign) {
     grid.append(note);
   } else {
     playlists.forEach((playlist) => {
-      const button = document.createElement("button");
-      button.type = "button";
+      const button = document.createElement("div");
       button.className = `playlist-tile${state.selectedPlaylistId === playlist.id ? " active" : ""}`;
       button.draggable = true;
       button.dataset.playlistSelect = playlist.id;
+      button.dataset.folderId = state.selectedFolderId;
+      button.role = "button";
+      button.tabIndex = 0;
       button.innerHTML = `
+        <div class="playlist-tile-top">
+          <span></span>
+          <div class="playlist-actions">
+            <button type="button" class="playlist-menu-button" data-playlist-menu aria-label="Actions pour ${escapeHtml(playlist.name)}">⋮</button>
+            <div class="playlist-action-panel hidden">
+              <button type="button" data-playlist-action="rename">Modifier le nom</button>
+              <button type="button" data-playlist-action="delete">Supprimer la playlist</button>
+              <label>
+                <span>Duppliquer la playlist dans</span>
+                <select data-playlist-duplicate-target></select>
+              </label>
+              <button type="button" data-playlist-action="duplicate">Duppliquer</button>
+            </div>
+          </div>
+        </div>
         <span class="playlist-disc" aria-hidden="true"></span>
         <strong>${escapeHtml(playlist.name)}</strong>
         <small>${playlist.tracks.length} musique${playlist.tracks.length > 1 ? "s" : ""}</small>
       `;
+      const targetSelect = button.querySelector("[data-playlist-duplicate-target]");
+      getFolderOptions(campaign).forEach((folder) => {
+        targetSelect.append(new Option(folder.label, folder.id));
+      });
       grid.append(button);
     });
   }
@@ -895,6 +1049,7 @@ async function renderTrack(track, campaign, locationType, playlistId) {
   const panel = document.createElement("div");
   panel.className = "track-action-panel hidden";
   panel.innerHTML = `
+    <button type="button" data-track-action="rename">Modifier le nom</button>
     <button type="button" data-track-action="remove-current">Supprimer la musique de la playlist</button>
     <label>
       <span>Ajouter la musique à une autre Playlist</span>
@@ -1022,6 +1177,8 @@ function toggleTrackMenu(button) {
   const panel = button.parentElement.querySelector(".track-action-panel");
   const isHidden = panel.classList.contains("hidden");
   closeTrackMenus();
+  closePlaylistMenus();
+  closeFolderMenus();
   panel.classList.toggle("hidden", !isHidden);
 }
 
@@ -1029,6 +1186,156 @@ function closeTrackMenus() {
   document.querySelectorAll(".track-action-panel").forEach((panel) => {
     panel.classList.add("hidden");
   });
+}
+
+function togglePlaylistMenu(button) {
+  const panel = button.parentElement.querySelector(".playlist-action-panel");
+  const isHidden = panel.classList.contains("hidden");
+  closePlaylistMenus();
+  closeTrackMenus();
+  closeFolderMenus();
+  panel.classList.toggle("hidden", !isHidden);
+}
+
+function closePlaylistMenus() {
+  document.querySelectorAll(".playlist-action-panel").forEach((panel) => {
+    panel.classList.add("hidden");
+  });
+}
+
+function toggleFolderMenu(button) {
+  const panel = button.parentElement.querySelector(".folder-action-panel");
+  const isHidden = panel.classList.contains("hidden");
+  closeFolderMenus();
+  closePlaylistMenus();
+  closeTrackMenus();
+  panel.classList.toggle("hidden", !isHidden);
+}
+
+function closeFolderMenus() {
+  document.querySelectorAll(".folder-action-panel").forEach((panel) => {
+    panel.classList.add("hidden");
+  });
+}
+
+function handleFolderAction(actionButton) {
+  const campaign = getActiveCampaign();
+  const folderCard = actionButton.closest(".folder-button");
+  if (!campaign || !folderCard) return;
+
+  const folderId = folderCard.dataset.folderSelect;
+  if (actionButton.dataset.folderAction === "rename") {
+    const folder = folderId === "root" ? { name: "Sans dossier" } : campaign.folders.find((item) => item.id === folderId);
+    openRenameModal("folder", folderId, folder?.name ?? "");
+    return;
+  }
+
+  if (folderId === "root") return;
+
+  if (actionButton.dataset.folderAction === "duplicate") {
+    duplicateFolder(campaign, folderId);
+  }
+
+  if (actionButton.dataset.folderAction === "delete") {
+    deleteFolder(campaign, folderId);
+  }
+}
+
+function duplicateFolder(campaign, folderId) {
+  const folder = campaign.folders.find((item) => item.id === folderId);
+  if (!folder) return;
+
+  const duplicate = {
+    ...folder,
+    id: createId(),
+    name: `${folder.name} copie`,
+    playlists: folder.playlists.map(clonePlaylist),
+  };
+
+  campaign.folders.push(duplicate);
+  state.selectedFolderId = duplicate.id;
+  state.selectedPlaylistId = duplicate.playlists[0]?.id ?? null;
+  touch(campaign);
+  persistAndRender();
+}
+
+function deleteFolder(campaign, folderId) {
+  const folderIndex = campaign.folders.findIndex((folder) => folder.id === folderId);
+  if (folderIndex < 0) return;
+
+  campaign.folders.splice(folderIndex, 1);
+  if (state.selectedFolderId === folderId) {
+    state.selectedFolderId = "root";
+    state.selectedPlaylistId = campaign.playlists[0]?.id ?? null;
+  }
+
+  touch(campaign);
+  persistAndRender();
+}
+
+function handlePlaylistAction(actionButton) {
+  const campaign = getActiveCampaign();
+  const tile = actionButton.closest(".playlist-tile");
+  if (!campaign || !tile) return;
+
+  if (actionButton.dataset.playlistAction === "rename") {
+    const playlist = findPlaylist(campaign, tile.dataset.playlistSelect);
+    openRenameModal("playlist", tile.dataset.playlistSelect, playlist?.name ?? "");
+    return;
+  }
+
+  if (actionButton.dataset.playlistAction === "delete") {
+    deletePlaylistFromFolder(campaign, tile.dataset.folderId, tile.dataset.playlistSelect);
+  }
+
+  if (actionButton.dataset.playlistAction === "duplicate") {
+    const targetFolderId = tile.querySelector("[data-playlist-duplicate-target]").value;
+    duplicatePlaylistToFolder(campaign, tile.dataset.folderId, tile.dataset.playlistSelect, targetFolderId);
+  }
+}
+
+function deletePlaylistFromFolder(campaign, folderId, playlistId) {
+  const playlists = getPlaylistsByFolderId(campaign, folderId);
+  if (!playlists) return;
+
+  const playlistIndex = playlists.findIndex((playlist) => playlist.id === playlistId);
+  if (playlistIndex < 0) return;
+
+  playlists.splice(playlistIndex, 1);
+  if (state.selectedPlaylistId === playlistId) {
+    state.selectedPlaylistId = playlists[0]?.id ?? null;
+  }
+
+  touch(campaign);
+  persistAndRender();
+}
+
+function duplicatePlaylistToFolder(campaign, sourceFolderId, playlistId, targetFolderId) {
+  const sourcePlaylists = getPlaylistsByFolderId(campaign, sourceFolderId);
+  const targetPlaylists = getPlaylistsByFolderId(campaign, targetFolderId);
+  if (!sourcePlaylists || !targetPlaylists) return;
+
+  const playlist = sourcePlaylists.find((item) => item.id === playlistId);
+  if (!playlist) return;
+
+  const duplicate = {
+    ...clonePlaylist(playlist),
+    name: `${playlist.name} copie`,
+  };
+
+  targetPlaylists.push(duplicate);
+  state.selectedFolderId = targetFolderId;
+  state.selectedPlaylistId = duplicate.id;
+  touch(campaign);
+  persistAndRender();
+}
+
+function clonePlaylist(playlist) {
+  return {
+    ...playlist,
+    id: createId(),
+    tracks: playlist.tracks.map((track) => ({ ...track })),
+  };
 }
 
 async function handleTrackAction(actionButton) {
@@ -1039,6 +1346,11 @@ async function handleTrackAction(actionButton) {
   const trackId = item.dataset.trackId;
   const sourceTrack = findTrack(campaign, trackId);
   if (!sourceTrack) return;
+
+  if (actionButton.dataset.trackAction === "rename") {
+    openRenameModal("track", trackId, sourceTrack.title);
+    return;
+  }
 
   if (actionButton.dataset.trackAction === "remove-current") {
     removeTrackFromCurrentLocation(campaign, item);
@@ -1158,11 +1470,28 @@ function getPlaylistOptions(campaign) {
   return playlists;
 }
 
-function getSelectedFolderPlaylists(campaign) {
-  if (state.selectedFolderId === "root") return campaign.playlists;
+function getFolderOptions(campaign) {
+  return [
+    {
+      id: "root",
+      label: "Sans dossier",
+    },
+    ...campaign.folders.map((folder) => ({
+      id: folder.id,
+      label: folder.name,
+    })),
+  ];
+}
 
-  const folder = campaign.folders.find((item) => item.id === state.selectedFolderId);
-  return folder?.playlists ?? [];
+function getSelectedFolderPlaylists(campaign) {
+  return getPlaylistsByFolderId(campaign, state.selectedFolderId) ?? [];
+}
+
+function getPlaylistsByFolderId(campaign, folderId) {
+  if (folderId === "root") return campaign.playlists;
+
+  const folder = campaign.folders.find((item) => item.id === folderId);
+  return folder?.playlists ?? null;
 }
 
 function reorderTrackInPlaylist(playlistId, draggedTrackId, targetTrackId, placement) {
@@ -1195,6 +1524,25 @@ function reorderPlaylistInSelectedFolder(folderId, draggedPlaylistId, targetPlay
   const insertIndex = placement === "after" ? targetIndexAfterRemoval + 1 : targetIndexAfterRemoval;
 
   playlists.splice(insertIndex, 0, playlist);
+  touch(campaign);
+  persistAndRender();
+}
+
+function movePlaylistToFolder(sourceFolderId, playlistId, targetFolderId) {
+  const campaign = getActiveCampaign();
+  if (!campaign || sourceFolderId === targetFolderId) return;
+
+  const sourcePlaylists = getPlaylistsByFolderId(campaign, sourceFolderId);
+  const targetPlaylists = getPlaylistsByFolderId(campaign, targetFolderId);
+  if (!sourcePlaylists || !targetPlaylists) return;
+
+  const playlistIndex = sourcePlaylists.findIndex((playlist) => playlist.id === playlistId);
+  if (playlistIndex < 0) return;
+
+  const [playlist] = sourcePlaylists.splice(playlistIndex, 1);
+  targetPlaylists.push(playlist);
+  state.selectedFolderId = targetFolderId;
+  state.selectedPlaylistId = playlist.id;
   touch(campaign);
   persistAndRender();
 }
@@ -1238,8 +1586,14 @@ function getHorizontalDropPlacement(element, pointerX) {
 }
 
 function clearDropMarkers() {
-  document.querySelectorAll(".drop-before, .drop-after").forEach((row) => {
-    row.classList.remove("drop-before", "drop-after");
+  document.querySelectorAll(".drop-before, .drop-after, .drop-target").forEach((row) => {
+    row.classList.remove("drop-before", "drop-after", "drop-target");
+  });
+}
+
+function restoreDraggableTracks() {
+  document.querySelectorAll(".detail-track").forEach((row) => {
+    row.draggable = true;
   });
 }
 

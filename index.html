@@ -141,6 +141,23 @@
       </div>
     </div>
 
+    <div id="rename-modal" class="campaign-modal hidden" role="dialog" aria-modal="true" aria-labelledby="rename-modal-title">
+      <div class="campaign-modal-panel">
+        <div class="campaign-modal-header">
+          <div>
+            <p class="eyebrow">Modification</p>
+            <h2 id="rename-modal-title">Modifier le nom</h2>
+          </div>
+          <button type="button" class="modal-close-button" data-close-modal="rename-modal" aria-label="Fermer">×</button>
+        </div>
+        <form id="rename-form" class="panel-form">
+          <label id="rename-label" for="rename-name">Nom</label>
+          <input id="rename-name" type="text" autocomplete="off" required>
+          <button type="submit" class="secondary-button">Enregistrer</button>
+        </form>
+      </div>
+    </div>
+
     <script src="app.js"></script>
   </body>
 </html>

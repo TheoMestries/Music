@@ -360,6 +360,7 @@ select:focus {
   display: grid;
   gap: 14px;
   padding: 18px;
+  overflow: visible;
 }
 
 .library-tree {
@@ -374,7 +375,7 @@ select:focus {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .folder-panel,
@@ -398,7 +399,10 @@ select:focus {
 }
 
 .playlist-detail-panel {
+  position: relative;
+  z-index: 5;
   background: #f9fbff;
+  overflow: visible;
 }
 
 .folder-panel h3,
@@ -452,6 +456,37 @@ select:focus {
   text-align: left;
 }
 
+.folder-button-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.folder-actions {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.folder-menu-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.folder-menu-button:hover {
+  border-color: var(--accent);
+}
+
 .folder-button:hover,
 .folder-button.active {
   border-color: var(--warm);
@@ -475,6 +510,12 @@ select:focus {
   box-shadow: inset 0 -3px 0 var(--accent);
 }
 
+.folder-button.drop-target {
+  border-color: var(--accent);
+  background: rgba(31, 122, 107, 0.12);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
 .folder-button span {
   font-weight: 800;
 }
@@ -494,17 +535,100 @@ select:focus {
 }
 
 .playlist-tile {
+  position: relative;
   display: grid;
-  place-items: center;
+  justify-items: center;
+  align-items: start;
   gap: 9px;
-  min-height: 132px;
+  min-height: 164px;
   border: 1px solid transparent;
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px 12px 14px;
   background: transparent;
   color: var(--ink);
   cursor: pointer;
   text-align: center;
+}
+
+.playlist-actions {
+  position: relative;
+}
+
+.playlist-tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  min-height: 30px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.playlist-menu-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.playlist-menu-button:hover {
+  border-color: var(--accent);
+}
+
+.folder-action-panel,
+.playlist-action-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  gap: 8px;
+  width: min(280px, calc(100vw - 48px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  text-align: left;
+}
+
+.folder-action-panel button,
+.playlist-action-panel button {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8f7f3;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.folder-action-panel button:hover:not(:disabled),
+.playlist-action-panel button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.folder-action-panel button:disabled,
+.playlist-action-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.folder-action-panel label,
+.playlist-action-panel label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .playlist-tile:hover,
@@ -568,12 +692,14 @@ select:focus {
 }
 
 .detail-track {
+  position: relative;
   grid-template-columns: 1fr !important;
   border: 2px solid var(--line);
   border-radius: 8px;
   padding: 12px !important;
   background: #fff;
   cursor: grab;
+  overflow: visible;
 }
 
 .detail-track:active {
@@ -739,6 +865,7 @@ select:focus {
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
+  z-index: 30;
 }
 
 .track-menu-button {
@@ -763,7 +890,7 @@ select:focus {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 10;
+  z-index: 1000;
   display: grid;
   gap: 8px;
   width: min(320px, calc(100vw - 48px));
