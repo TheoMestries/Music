@@ -68,6 +68,53 @@ select {
   min-height: 100vh;
 }
 
+.login-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.login-topbar {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 10;
+}
+
+.login-panel {
+  width: min(420px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 24px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.login-brand {
+  margin-bottom: 22px;
+}
+
+.login-brand h1,
+.login-brand p {
+  margin: 0;
+}
+
+.login-form {
+  display: grid;
+  gap: 12px;
+}
+
+.login-error {
+  margin: 0 0 16px;
+  border: 1px solid rgba(216, 71, 61, 0.4);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(216, 71, 61, 0.1);
+  color: var(--warm);
+  font-weight: 700;
+}
+
 .app-topbar {
   display: flex;
   align-items: center;
@@ -174,6 +221,9 @@ select:focus {
 }
 
 .secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 42px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -182,6 +232,7 @@ select:focus {
   color: var(--ink);
   cursor: pointer;
   font-weight: 750;
+  text-decoration: none;
 }
 
 .secondary-button:hover {
