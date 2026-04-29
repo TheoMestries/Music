@@ -5,8 +5,12 @@ const state = {
   activeCampaignId: null,
   selectedFolderId: "root",
   selectedPlaylistId: null,
+  openPlaylistIds: [],
   dragType: null,
   renameTarget: null,
+  playlistRuns: new Map(),
+  playlistCurrentTrackIds: new Map(),
+  playlistOpenTimer: null,
 };
 
 const campaignForm = document.querySelector("#campaign-form");
@@ -75,7 +79,8 @@ libraryTree.addEventListener("click", (event) => {
   const actionButton = event.target.closest("[data-track-menu]");
   const action = event.target.closest("[data-track-action]");
   const playPlaylistButton = event.target.closest("[data-play-playlist]");
-  const shufflePlaylistButton = event.target.closest("[data-shuffle-playlist]");
+  const stopPlaylistButton = event.target.closest("[data-stop-playlist]");
+  const closePlaylistDetailButton = event.target.closest("[data-close-playlist-detail]");
   const panel = event.target.closest(".track-action-panel");
   const playlistPanel = event.target.closest(".playlist-action-panel");
   const folderPanel = event.target.closest(".folder-action-panel");
@@ -125,30 +130,36 @@ libraryTree.addEventListener("click", (event) => {
     return;
   }
 
+  if (closePlaylistDetailButton) {
+    closePlaylistDetail(closePlaylistDetailButton.dataset.closePlaylistDetail, true);
+    return;
+  }
+
   if (folderPanel) return;
   if (playlistPanel) return;
   if (panel) return;
 
   if (folderButton) {
     state.selectedFolderId = folderButton.dataset.folderSelect;
-    state.selectedPlaylistId = null;
     renderActiveCampaign();
     return;
   }
 
   if (playlistButton) {
-    state.selectedPlaylistId = playlistButton.dataset.playlistSelect;
-    renderActiveCampaign();
-    return;
-  }
-
-  if (shufflePlaylistButton) {
-    playPlaylist(shufflePlaylistButton.dataset.shufflePlaylist, true);
+    window.clearTimeout(state.playlistOpenTimer);
+    state.playlistOpenTimer = window.setTimeout(async () => {
+      await openPlaylistDetailInView(playlistButton.dataset.playlistSelect);
+    }, 220);
     return;
   }
 
   if (playPlaylistButton) {
-    playPlaylist(playPlaylistButton.dataset.playPlaylist, false);
+    playPlaylist(playPlaylistButton.dataset.playPlaylist);
+    return;
+  }
+
+  if (stopPlaylistButton) {
+    stopPlaylist(stopPlaylistButton.dataset.stopPlaylist);
     return;
   }
 
@@ -156,10 +167,25 @@ libraryTree.addEventListener("click", (event) => {
   closePlaylistMenus();
 });
 
+libraryTree.addEventListener("dblclick", (event) => {
+  if (event.target.closest("button, input, select, audio, a, label, .playlist-action-panel, .playlist-actions")) return;
+
+  const playlistButton = event.target.closest("[data-playlist-select]");
+  if (!playlistButton) return;
+
+  window.clearTimeout(state.playlistOpenTimer);
+  const playlistId = playlistButton.dataset.playlistSelect;
+  if (state.openPlaylistIds.includes(playlistId)) {
+    closePlaylistDetail(playlistId, true);
+    return;
+  }
+
+  openPlaylistDetailInView(playlistId).then(() => playPlaylist(playlistId));
+});
+
 libraryTree.addEventListener("change", (event) => {
   const playlistLoop = event.target.closest("[data-playlist-loop]");
-  const playlistAutoplay = event.target.closest("[data-playlist-autoplay]");
-  const playlistAutoplayShuffle = event.target.closest("[data-playlist-autoplay-shuffle]");
+  const playlistShuffle = event.target.closest("[data-playlist-shuffle]");
   const trackLoop = event.target.closest("[data-track-loop]");
 
   if (playlistLoop) {
@@ -167,13 +193,8 @@ libraryTree.addEventListener("change", (event) => {
     return;
   }
 
-  if (playlistAutoplay) {
-    updatePlaylistAutoplay(playlistAutoplay);
-    return;
-  }
-
-  if (playlistAutoplayShuffle) {
-    updatePlaylistAutoplayShuffle(playlistAutoplayShuffle);
+  if (playlistShuffle) {
+    updatePlaylistShuffle(playlistShuffle);
     return;
   }
 
@@ -191,6 +212,18 @@ libraryTree.addEventListener("pointerdown", (event) => {
   draggableTrack.draggable = false;
 });
 
+libraryTree.addEventListener("pointerover", (event) => {
+  const player = event.target.closest("audio.track-player");
+  const draggableTrack = player?.closest(".detail-track");
+  if (draggableTrack) draggableTrack.draggable = false;
+});
+
+libraryTree.addEventListener("pointerout", (event) => {
+  const player = event.target.closest("audio.track-player");
+  const draggableTrack = player?.closest(".detail-track");
+  if (draggableTrack) draggableTrack.draggable = true;
+});
+
 libraryTree.addEventListener("pointerup", restoreDraggableTracks);
 libraryTree.addEventListener("pointercancel", restoreDraggableTracks);
 
@@ -198,6 +231,11 @@ libraryTree.addEventListener("dragstart", (event) => {
   const row = event.target.closest(".detail-track");
   const playlistTile = event.target.closest(".playlist-tile");
   const folderButton = event.target.closest(".folder-button");
+
+  if (event.target.closest("audio.track-player")) {
+    event.preventDefault();
+    return;
+  }
 
   if (row && event.target.closest("button, input, select, audio, a, label, .track-actions")) {
     event.preventDefault();
@@ -347,6 +385,7 @@ campaignForm.addEventListener("submit", (event) => {
   state.activeCampaignId = campaign.id;
   state.selectedFolderId = "root";
   state.selectedPlaylistId = null;
+  state.openPlaylistIds = [];
   campaignName.value = "";
   persistAndRender();
   closeCampaignModal();
@@ -380,8 +419,7 @@ playlistForm.addEventListener("submit", (event) => {
     id: createId(),
     name,
     loop: false,
-    autoplayOnOpen: false,
-    autoplayShuffleOnOpen: false,
+    shuffleOnPlay: false,
     tracks: [],
   };
 
@@ -468,8 +506,7 @@ function normalizePlaylist(playlist) {
   return {
     ...playlist,
     loop: playlist.loop ?? false,
-    autoplayOnOpen: playlist.autoplayOnOpen ?? false,
-    autoplayShuffleOnOpen: playlist.autoplayShuffleOnOpen ?? false,
+    shuffleOnPlay: playlist.shuffleOnPlay ?? playlist.autoplayShuffleOnOpen ?? false,
     tracks: (playlist.tracks ?? []).map(normalizeTrack),
   };
 }
@@ -479,6 +516,7 @@ function normalizeTrack(track) {
     ...track,
     loop: track.loop ?? false,
     audioUrl: track.audioUrl ?? null,
+    volume: normalizeVolume(track.volume),
   };
 }
 
@@ -588,6 +626,7 @@ function renderCampaigns() {
       state.activeCampaignId = campaign.id;
       state.selectedFolderId = "root";
       state.selectedPlaylistId = null;
+      state.openPlaylistIds = [];
       closeCampaignModal();
       render();
     });
@@ -732,7 +771,7 @@ async function renderTree(campaign) {
 
   interfaceView.append(renderFolderPanel(campaign));
   interfaceView.append(renderPlaylistPanel(campaign));
-  interfaceView.append(await renderPlaylistDetailPanel(campaign));
+  interfaceView.append(await renderPlaylistDetailStack(campaign));
   libraryTree.append(interfaceView);
 }
 
@@ -742,8 +781,8 @@ function ensureSelection(campaign) {
     state.selectedFolderId = "root";
   }
 
-  const playlists = getSelectedFolderPlaylists(campaign);
-  if (!playlists.some((playlist) => playlist.id === state.selectedPlaylistId)) {
+  state.openPlaylistIds = state.openPlaylistIds.filter((playlistId) => findPlaylist(campaign, playlistId));
+  if (state.selectedPlaylistId && !findPlaylist(campaign, state.selectedPlaylistId)) {
     state.selectedPlaylistId = null;
   }
 }
@@ -812,7 +851,7 @@ function renderPlaylistPanel(campaign) {
   } else {
     playlists.forEach((playlist) => {
       const button = document.createElement("div");
-      button.className = `playlist-tile${state.selectedPlaylistId === playlist.id ? " active" : ""}`;
+      button.className = `playlist-tile${state.openPlaylistIds.includes(playlist.id) ? " active" : ""}`;
       button.draggable = true;
       button.dataset.playlistSelect = playlist.id;
       button.dataset.folderId = state.selectedFolderId;
@@ -885,15 +924,11 @@ async function renderPlaylist(playlist, campaign) {
           <span>Boucle</span>
         </label>
         <label class="loop-toggle">
-          <input type="checkbox" data-playlist-autoplay="${playlist.id}" ${playlist.autoplayOnOpen ? "checked" : ""}>
-          <span>Lancer à l'ouverture</span>
-        </label>
-        <label class="loop-toggle">
-          <input type="checkbox" data-playlist-autoplay-shuffle="${playlist.id}" ${playlist.autoplayShuffleOnOpen ? "checked" : ""}>
-          <span>Lancer en aléatoire à l'ouverture</span>
+          <input type="checkbox" data-playlist-shuffle="${playlist.id}" ${playlist.shuffleOnPlay ? "checked" : ""}>
+          <span>Lancé en aléatoire</span>
         </label>
         <button type="button" class="playlist-play-button" data-play-playlist="${playlist.id}" aria-label="Lancer ${escapeHtml(playlist.name)}">▶</button>
-        <button type="button" class="playlist-play-button" data-shuffle-playlist="${playlist.id}" aria-label="Lancer ${escapeHtml(playlist.name)} en aléatoire">⤨</button>
+        <button type="button" class="playlist-stop-button" data-stop-playlist="${playlist.id}" aria-label="Arrêter ${escapeHtml(playlist.name)}">Stop</button>
       </div>
     </div>
   `;
@@ -916,24 +951,36 @@ async function renderPlaylist(playlist, campaign) {
   return playlistCard;
 }
 
-async function renderPlaylistDetailPanel(campaign) {
-  const panel = document.createElement("section");
-  panel.className = "playlist-detail-panel";
+async function renderPlaylistDetailStack(campaign) {
+  const stack = document.createElement("section");
+  stack.className = "playlist-detail-stack";
 
-  const playlist = findPlaylist(campaign, state.selectedPlaylistId);
-  if (!playlist) {
-    panel.innerHTML = `
+  if (state.openPlaylistIds.length === 0) {
+    stack.innerHTML = `
       <div class="detail-empty">
         <div class="panel-heading">
-          <h3>Détail de la playlist</h3>
+          <h3>Playlists ouvertes</h3>
           <button type="button" class="panel-add-button" data-open-track-modal aria-label="Ajouter une musique">+</button>
         </div>
-        <p>Sélectionne une playlist pour configurer son ordre de lecture.</p>
+        <p>Aucune playlist ouverte.</p>
       </div>
     `;
-    return panel;
+    return stack;
   }
 
+  for (const playlistId of state.openPlaylistIds) {
+    const playlist = findPlaylist(campaign, playlistId);
+    if (playlist) {
+      stack.append(await renderPlaylistDetailCard(playlist, campaign));
+    }
+  }
+
+  return stack;
+}
+
+async function renderPlaylistDetailCard(playlist, campaign) {
+  const panel = document.createElement("article");
+  panel.className = "playlist-detail-panel";
   panel.dataset.playlistId = playlist.id;
   panel.innerHTML = `
     <div class="playlist-detail-header">
@@ -943,22 +990,19 @@ async function renderPlaylistDetailPanel(campaign) {
       </div>
       <div class="playlist-controls">
         <button type="button" class="panel-add-button" data-open-track-modal aria-label="Ajouter une musique">+</button>
+        <button type="button" class="playlist-close-button" data-close-playlist-detail="${playlist.id}" aria-label="Fermer ${escapeHtml(playlist.name)}">×</button>
         <label class="loop-toggle">
           <input type="checkbox" data-playlist-loop="${playlist.id}" ${playlist.loop ? "checked" : ""}>
           <span>Boucle</span>
         </label>
         <button type="button" class="playlist-play-button" data-play-playlist="${playlist.id}" aria-label="Lancer ${escapeHtml(playlist.name)}">▶</button>
-        <button type="button" class="playlist-play-button" data-shuffle-playlist="${playlist.id}" aria-label="Lancer ${escapeHtml(playlist.name)} en aléatoire">⤨</button>
+        <button type="button" class="playlist-stop-button" data-stop-playlist="${playlist.id}" aria-label="Arrêter ${escapeHtml(playlist.name)}">Stop</button>
       </div>
     </div>
     <div class="playlist-open-options">
       <label class="loop-toggle">
-        <input type="checkbox" data-playlist-autoplay="${playlist.id}" ${playlist.autoplayOnOpen ? "checked" : ""}>
-        <span>Lancer à l'ouverture</span>
-      </label>
-      <label class="loop-toggle">
-        <input type="checkbox" data-playlist-autoplay-shuffle="${playlist.id}" ${playlist.autoplayShuffleOnOpen ? "checked" : ""}>
-        <span>Lancer en aléatoire à l'ouverture</span>
+        <input type="checkbox" data-playlist-shuffle="${playlist.id}" ${playlist.shuffleOnPlay ? "checked" : ""}>
+        <span>Lancé en aléatoire</span>
       </label>
     </div>
   `;
@@ -977,48 +1021,263 @@ async function renderPlaylistDetailPanel(campaign) {
   for (const track of playlist.tracks) {
     const row = await renderTrack(track, campaign, "playlist", playlist.id);
     row.classList.add("detail-track");
+    if (state.playlistCurrentTrackIds.get(playlist.id) === track.id) {
+      row.classList.add("is-playing");
+    }
     row.draggable = true;
     row.dataset.playlistId = playlist.id;
     list.append(row);
   }
 
   panel.append(list);
-  if (playlist.autoplayOnOpen || playlist.autoplayShuffleOnOpen) {
-    requestAnimationFrame(() => playPlaylist(playlist.id, playlist.autoplayShuffleOnOpen));
-  }
   return panel;
 }
 
-function playPlaylist(playlistId, shuffle) {
-  const playlistCard = libraryTree.querySelector(`[data-playlist-id="${CSS.escape(playlistId)}"]`);
+function openPlaylistDetail(playlistId) {
   const campaign = getActiveCampaign();
   const playlist = findPlaylist(campaign, playlistId);
-  if (!playlistCard) return;
+  if (!playlist) return;
 
-  const players = shuffleArray([...playlistCard.querySelectorAll("audio.track-player")], shuffle);
-  if (players.length === 0) return;
+  const wasOpen = state.openPlaylistIds.includes(playlistId);
+  if (!wasOpen) {
+    state.openPlaylistIds.push(playlistId);
+  }
+  state.selectedPlaylistId = playlistId;
 
-  document.querySelectorAll("audio").forEach((player) => {
-    player.pause();
-    player.currentTime = 0;
-    player.onended = null;
+}
+
+async function openPlaylistDetailInView(playlistId) {
+  const campaign = getActiveCampaign();
+  const playlist = findPlaylist(campaign, playlistId);
+  if (!campaign || !playlist) return;
+
+  openPlaylistDetail(playlistId);
+  document.querySelectorAll(`[data-playlist-select="${CSS.escape(playlistId)}"]`).forEach((tile) => {
+    tile.classList.add("active");
   });
 
-  players.forEach((player, index) => {
+  const stack = libraryTree.querySelector(".playlist-detail-stack");
+  if (!stack || stack.querySelector(`[data-playlist-id="${CSS.escape(playlistId)}"]`)) return;
+
+  const empty = stack.querySelector(".detail-empty");
+  if (empty) empty.remove();
+  stack.append(await renderPlaylistDetailCard(playlist, campaign));
+}
+
+async function closePlaylistDetail(playlistId, fade = false) {
+  if (fade) {
+    await fadeOutPlaylist(playlistId);
+  } else {
+    stopPlaylist(playlistId);
+  }
+
+  state.openPlaylistIds = state.openPlaylistIds.filter((id) => id !== playlistId);
+  if (state.selectedPlaylistId === playlistId) {
+    state.selectedPlaylistId = state.openPlaylistIds.at(-1) ?? null;
+  }
+
+  const playlistPanel = libraryTree.querySelector(`[data-playlist-id="${CSS.escape(playlistId)}"]`);
+  if (!fade) stopPanelPlayers(playlistPanel);
+  playlistPanel?.remove();
+  document.querySelectorAll(`[data-playlist-select="${CSS.escape(playlistId)}"]`).forEach((tile) => {
+    tile.classList.remove("active");
+  });
+
+  const stack = libraryTree.querySelector(".playlist-detail-stack");
+  if (stack && state.openPlaylistIds.length === 0) {
+    stack.innerHTML = `
+      <div class="detail-empty">
+        <div class="panel-heading">
+          <h3>Playlists ouvertes</h3>
+          <button type="button" class="panel-add-button" data-open-track-modal aria-label="Ajouter une musique">+</button>
+        </div>
+        <p>Aucune playlist ouverte.</p>
+      </div>
+    `;
+  }
+}
+
+function playPlaylist(playlistId) {
+  const campaign = getActiveCampaign();
+  const playlist = findPlaylist(campaign, playlistId);
+  if (!playlist) return;
+
+  const playlistPanel = libraryTree.querySelector(`[data-playlist-id="${CSS.escape(playlistId)}"]`);
+  if (!playlistPanel) return;
+
+  const rows = shuffleArray([...playlistPanel.querySelectorAll(".detail-track")], playlist.shuffleOnPlay);
+  const queue = rows
+    .map((row) => ({
+      trackId: row.dataset.trackId,
+      player: row.querySelector("audio.track-player"),
+    }))
+    .filter((item) => item.player);
+  if (queue.length === 0) return;
+
+  stopPlaylist(playlistId);
+
+  queue.forEach(({ player }, index) => {
     player.onended = () => {
-      const nextPlayer = players[index + 1];
+      const nextPlayer = queue[index + 1];
       if (nextPlayer) {
-        nextPlayer.currentTime = 0;
-        nextPlayer.play().catch(() => {});
+        playQueuedTrack(playlistId, nextPlayer);
       } else if (playlist?.loop) {
-        players[0].currentTime = 0;
-        players[0].play().catch(() => {});
+        playQueuedTrack(playlistId, queue[0]);
+      } else {
+        state.playlistCurrentTrackIds.delete(playlistId);
+        updatePlayingTrackDisplay(playlistId);
       }
     };
   });
 
-  players[0].currentTime = 0;
-  players[0].play().catch(() => {});
+  state.playlistRuns.set(playlistId, queue.map((item) => item.player));
+  playQueuedTrack(playlistId, queue[0]);
+}
+
+function stopPlaylist(playlistId) {
+  const players = state.playlistRuns.get(playlistId);
+  if (!players) return;
+
+  stopPlayers(players);
+  state.playlistRuns.delete(playlistId);
+  state.playlistCurrentTrackIds.delete(playlistId);
+  updatePlayingTrackDisplay(playlistId);
+}
+
+function stopPanelPlayers(playlistPanel) {
+  if (!playlistPanel) return;
+  stopPlayers([...playlistPanel.querySelectorAll("audio.track-player")]);
+}
+
+function stopPlayers(players) {
+  players.forEach((player) => {
+    player.pause();
+    player.currentTime = 0;
+    player.onended = null;
+    setPlayerVolume(player, getSavedPlayerVolume(player), true);
+  });
+}
+
+async function fadeOutPlaylist(playlistId) {
+  const playlistPanel = libraryTree.querySelector(`[data-playlist-id="${CSS.escape(playlistId)}"]`);
+  const players = new Set(state.playlistRuns.get(playlistId) ?? []);
+  playlistPanel?.querySelectorAll("audio.track-player").forEach((player) => {
+    if (!player.paused && !player.ended) players.add(player);
+  });
+
+  if (players.size === 0) {
+    stopPlaylist(playlistId);
+    stopPanelPlayers(playlistPanel);
+    return;
+  }
+
+  await fadeOutPlayers([...players], 650);
+  state.playlistRuns.delete(playlistId);
+  state.playlistCurrentTrackIds.delete(playlistId);
+  updatePlayingTrackDisplay(playlistId);
+}
+
+function fadeOutPlayers(players, duration) {
+  const activePlayers = players.filter((player) => !player.paused && !player.ended);
+  if (activePlayers.length === 0) return Promise.resolve();
+
+  const startVolumes = new Map(activePlayers.map((player) => [player, player.volume]));
+  const startedAt = performance.now();
+
+  return new Promise((resolve) => {
+    function tick(now) {
+      const progress = Math.min(Math.max((now - startedAt) / duration, 0), 1);
+      activePlayers.forEach((player) => {
+        player.dataset.fadingVolume = "true";
+        setPlayerVolume(player, (startVolumes.get(player) ?? 1) * (1 - progress), true);
+      });
+
+      if (progress < 1) {
+        requestAnimationFrame(tick);
+        return;
+      }
+
+      stopPlayers(activePlayers);
+      activePlayers.forEach((player) => {
+        delete player.dataset.fadingVolume;
+      });
+      resolve();
+    }
+
+    requestAnimationFrame(tick);
+  });
+}
+
+function clampVolume(value) {
+  return Math.min(Math.max(value, 0), 1);
+}
+
+function normalizeVolume(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? clampVolume(number) : 1;
+}
+
+function getSavedPlayerVolume(player) {
+  const item = player.closest(".track-item");
+  const campaign = getActiveCampaign();
+  const track = item && campaign ? findTrack(campaign, item.dataset.trackId) : null;
+  return normalizeVolume(track?.volume);
+}
+
+function playQueuedTrack(playlistId, item) {
+  state.playlistCurrentTrackIds.set(playlistId, item.trackId);
+  updatePlayingTrackDisplay(playlistId);
+  setPlayerVolume(item.player, getSavedPlayerVolume(item.player), true);
+  item.player.currentTime = 0;
+  item.player.play().catch(() => {});
+}
+
+function updatePlayingTrackDisplay(playlistId) {
+  const playlistPanel = libraryTree.querySelector(`[data-playlist-id="${CSS.escape(playlistId)}"]`);
+  if (!playlistPanel) return;
+
+  const currentTrackId = state.playlistCurrentTrackIds.get(playlistId);
+  playlistPanel.querySelectorAll(".detail-track").forEach((row) => {
+    row.classList.toggle("is-playing", Boolean(currentTrackId) && row.dataset.trackId === currentTrackId);
+  });
+}
+
+function syncPlayerPlayingState(player, isPlaying) {
+  const row = player.closest(".track-item");
+  if (!row) return;
+
+  row.classList.toggle("is-playing", isPlaying && !player.paused && !player.ended);
+}
+
+function saveTrackVolume(player) {
+  if (player.dataset.restoringVolume === "true" || player.dataset.fadingVolume === "true") return;
+
+  const item = player.closest(".track-item");
+  const campaign = getActiveCampaign();
+  if (!item || !campaign) return;
+
+  const volume = normalizeVolume(player.volume);
+  updateTrackEverywhere(campaign, item.dataset.trackId, (track) => {
+    track.volume = volume;
+  });
+
+  document.querySelectorAll(`[data-track-id="${CSS.escape(item.dataset.trackId)}"] audio.track-player`).forEach((otherPlayer) => {
+    if (otherPlayer === player || otherPlayer.dataset.fadingVolume === "true") return;
+    setPlayerVolume(otherPlayer, volume, true);
+  });
+
+  touch(campaign);
+  saveCampaigns().catch(showBackendError);
+}
+
+function setPlayerVolume(player, volume, restoring = false) {
+  if (restoring) player.dataset.restoringVolume = "true";
+  player.volume = normalizeVolume(volume);
+  if (restoring) {
+    requestAnimationFrame(() => {
+      delete player.dataset.restoringVolume;
+    });
+  }
 }
 
 function shuffleArray(items, shouldShuffle) {
@@ -1098,9 +1357,15 @@ async function renderTrack(track, campaign, locationType, playlistId) {
     const player = document.createElement("audio");
     player.className = "track-player";
     player.controls = true;
+    player.draggable = false;
     player.loop = Boolean(track.loop);
     player.preload = "metadata";
     player.src = audioUrl;
+    player.volume = normalizeVolume(track.volume);
+    player.addEventListener("play", () => syncPlayerPlayingState(player, true));
+    player.addEventListener("pause", () => syncPlayerPlayingState(player, false));
+    player.addEventListener("ended", () => syncPlayerPlayingState(player, false));
+    player.addEventListener("volumechange", () => saveTrackVolume(player));
     item.append(player);
   } else {
     const missing = document.createElement("span");
@@ -1122,31 +1387,15 @@ function updatePlaylistLoop(input) {
   saveCampaigns().catch(showBackendError);
 }
 
-function updatePlaylistAutoplay(input) {
+function updatePlaylistShuffle(input) {
   const campaign = getActiveCampaign();
-  const playlist = findPlaylist(campaign, input.dataset.playlistAutoplay);
+  const playlist = findPlaylist(campaign, input.dataset.playlistShuffle);
   if (!campaign || !playlist) return;
 
-  playlist.autoplayOnOpen = input.checked;
-  if (!input.checked) playlist.autoplayShuffleOnOpen = false;
-
-  const shuffleInput = document.querySelector(`[data-playlist-autoplay-shuffle="${CSS.escape(playlist.id)}"]`);
-  if (shuffleInput) shuffleInput.checked = playlist.autoplayShuffleOnOpen;
-
-  touch(campaign);
-  saveCampaigns().catch(showBackendError);
-}
-
-function updatePlaylistAutoplayShuffle(input) {
-  const campaign = getActiveCampaign();
-  const playlist = findPlaylist(campaign, input.dataset.playlistAutoplayShuffle);
-  if (!campaign || !playlist) return;
-
-  playlist.autoplayShuffleOnOpen = input.checked;
-  if (input.checked) playlist.autoplayOnOpen = true;
-
-  const autoplayInput = document.querySelector(`[data-playlist-autoplay="${CSS.escape(playlist.id)}"]`);
-  if (autoplayInput) autoplayInput.checked = playlist.autoplayOnOpen;
+  playlist.shuffleOnPlay = input.checked;
+  document.querySelectorAll(`[data-playlist-shuffle="${CSS.escape(playlist.id)}"]`).forEach((checkbox) => {
+    checkbox.checked = playlist.shuffleOnPlay;
+  });
 
   touch(campaign);
   saveCampaigns().catch(showBackendError);
@@ -1283,10 +1532,14 @@ function deleteFolder(campaign, folderId) {
   const folderIndex = campaign.folders.findIndex((folder) => folder.id === folderId);
   if (folderIndex < 0) return;
 
-  campaign.folders.splice(folderIndex, 1);
+  const [folder] = campaign.folders.splice(folderIndex, 1);
+  folder.playlists.forEach((playlist) => {
+    stopPlaylist(playlist.id);
+    state.openPlaylistIds = state.openPlaylistIds.filter((id) => id !== playlist.id);
+  });
   if (state.selectedFolderId === folderId) {
     state.selectedFolderId = "root";
-    state.selectedPlaylistId = campaign.playlists[0]?.id ?? null;
+    state.selectedPlaylistId = state.openPlaylistIds.at(-1) ?? null;
   }
 
   touch(campaign);
@@ -1322,8 +1575,10 @@ function deletePlaylistFromFolder(campaign, folderId, playlistId) {
   if (playlistIndex < 0) return;
 
   playlists.splice(playlistIndex, 1);
+  stopPlaylist(playlistId);
+  state.openPlaylistIds = state.openPlaylistIds.filter((id) => id !== playlistId);
   if (state.selectedPlaylistId === playlistId) {
-    state.selectedPlaylistId = playlists[0]?.id ?? null;
+    state.selectedPlaylistId = state.openPlaylistIds.at(-1) ?? null;
   }
 
   touch(campaign);
