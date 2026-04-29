@@ -260,7 +260,7 @@ campaignForm.addEventListener("submit", (event) => {
   if (!name) return;
 
   const campaign = {
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -285,7 +285,7 @@ folderForm.addEventListener("submit", (event) => {
   if (!campaign || !name) return;
 
   campaign.folders.push({
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     playlists: [],
   });
@@ -303,7 +303,7 @@ playlistForm.addEventListener("submit", (event) => {
   if (!campaign || !name) return;
 
   const playlist = {
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     loop: false,
     autoplayOnOpen: false,
@@ -332,7 +332,7 @@ trackForm.addEventListener("submit", async (event) => {
   const file = trackFile.files[0];
   if (!campaign || !title || !file) return;
 
-  const trackId = crypto.randomUUID();
+  const trackId = createId();
   const track = {
     id: trackId,
     title,
@@ -445,6 +445,27 @@ async function initializeApp() {
 function showBackendError(error) {
   console.error(error);
   alert(error.message || "Une erreur serveur est survenue.");
+}
+
+function createId() {
+  if (crypto?.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  const randomValues = new Uint8Array(16);
+  if (crypto?.getRandomValues) {
+    crypto.getRandomValues(randomValues);
+  } else {
+    for (let index = 0; index < randomValues.length; index += 1) {
+      randomValues[index] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  randomValues[6] = (randomValues[6] & 0x0f) | 0x40;
+  randomValues[8] = (randomValues[8] & 0x3f) | 0x80;
+
+  const hex = [...randomValues].map((value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function renderCampaigns() {
