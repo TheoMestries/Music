@@ -12,6 +12,22 @@ ensureBroadcastDirectory($dataDir);
 $action = $_GET['action'] ?? 'state';
 
 try {
+    if ($action === 'health') {
+        respond([
+            'success' => true,
+            'phpVersion' => PHP_VERSION,
+            'dataDir' => [
+                'exists' => is_dir($dataDir),
+                'writable' => is_writable($dataDir),
+            ],
+            'stateFile' => [
+                'exists' => is_file($stateFile),
+                'writable' => !is_file($stateFile) || is_writable($stateFile),
+            ],
+            'state' => normalizeBroadcastState(readBroadcastState($stateFile)),
+        ]);
+    }
+
     if ($action === 'state') {
         respond(normalizeBroadcastState(readBroadcastState($stateFile)));
     }
@@ -43,8 +59,12 @@ try {
 
 function ensureBroadcastDirectory(string $path): void
 {
-    if (!is_dir($path)) {
-        mkdir($path, 0775, true);
+    if (is_dir($path)) {
+        return;
+    }
+
+    if (!mkdir($path, 0775, true) && !is_dir($path)) {
+        throw new RuntimeException('Impossible de creer le dossier data.');
     }
 }
 
@@ -221,7 +241,10 @@ function readBroadcastJsonBody(): array
 
 function writeBroadcastState(string $stateFile, array $state): void
 {
-    file_put_contents($stateFile, json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
+    $written = file_put_contents($stateFile, json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
+    if ($written === false) {
+        throw new RuntimeException('Impossible d\'ecrire dans data/broadcast.json.');
+    }
 }
 
 function respond(array $payload): void
