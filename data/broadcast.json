@@ -1,0 +1,13 @@
+{
+    "live": true,
+    "isPlaying": false,
+    "trackId": null,
+    "title": null,
+    "campaignName": "test",
+    "file": null,
+    "currentTime": 0,
+    "duration": null,
+    "volume": 1,
+    "tracks": [],
+    "updatedAt": 1777560851
+}

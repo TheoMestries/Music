@@ -1,1 +1,3 @@
 DirectoryIndex index.php index.html
+RewriteEngine On
+RewriteRule ^diffusion/?$ diffusion.php [L]

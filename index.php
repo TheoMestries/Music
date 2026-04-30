@@ -10,7 +10,7 @@ requireLogin();
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Campagnes musicales</title>
-    <link rel="stylesheet" href="styles.css?v=auth-audio-2">
+    <link rel="stylesheet" href="styles.css?v=diffusion-1">
   </head>
   <body>
     <main class="app-shell">
@@ -24,6 +24,13 @@ requireLogin();
             </div>
           </div>
           <div class="topbar-actions">
+            <div class="broadcast-control" aria-label="Diffusion en direct">
+              <button id="broadcast-toggle" type="button" class="broadcast-toggle" aria-pressed="false">
+                <span class="broadcast-dot" aria-hidden="true"></span>
+                <span id="broadcast-label">Diffusion OFF</span>
+              </button>
+              <a class="secondary-button broadcast-link" href="diffusion" target="_blank" rel="noopener">Lien diffusion</a>
+            </div>
             <button id="theme-toggle" type="button" class="secondary-button">Mode sombre</button>
             <button id="campaign-switch" type="button" class="secondary-button">Changer de campagne</button>
             <a class="secondary-button logout-button" href="logout.php">Déconnexion</a>
@@ -169,6 +176,6 @@ requireLogin();
     </div>
 
     <script src="theme.js?v=1"></script>
-    <script src="app.js?v=auth-audio-2"></script>
+    <script src="app.js?v=diffusion-1"></script>
   </body>
 </html>

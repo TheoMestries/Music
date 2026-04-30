@@ -11,6 +11,9 @@ const state = {
   playlistRuns: new Map(),
   playlistCurrentTrackIds: new Map(),
   playlistOpenTimer: null,
+  broadcastEnabled: false,
+  broadcastTimer: null,
+  lastBroadcastSentAt: 0,
 };
 
 const campaignForm = document.querySelector("#campaign-form");
@@ -44,8 +47,13 @@ const renameModal = document.querySelector("#rename-modal");
 const renameForm = document.querySelector("#rename-form");
 const renameName = document.querySelector("#rename-name");
 const renameLabel = document.querySelector("#rename-label");
+const broadcastToggle = document.querySelector("#broadcast-toggle");
+const broadcastLabel = document.querySelector("#broadcast-label");
 
 campaignSwitch.addEventListener("click", () => openCampaignModal());
+if (broadcastToggle) {
+  broadcastToggle.addEventListener("click", () => toggleBroadcast());
+}
 campaignModalClose.addEventListener("click", () => closeCampaignModal());
 campaignModal.addEventListener("click", (event) => {
   if (event.target === campaignModal && state.activeCampaignId) {
@@ -61,6 +69,11 @@ document.addEventListener("click", (event) => {
   if ([folderModal, playlistModal, trackModal, renameModal].includes(event.target)) {
     closeModal(event.target.id);
   }
+});
+
+window.addEventListener("beforeunload", () => {
+  if (!state.broadcastEnabled) return;
+  navigator.sendBeacon?.("broadcast.php?action=stop");
 });
 
 libraryTree.addEventListener("click", (event) => {
@@ -1141,6 +1154,130 @@ function stopPlayers(players) {
   });
 }
 
+async function toggleBroadcast() {
+  state.broadcastEnabled = !state.broadcastEnabled;
+  updateBroadcastControl();
+
+  if (state.broadcastEnabled) {
+    startBroadcastTimer();
+    await sendBroadcastState(true);
+    return;
+  }
+
+  stopBroadcastTimer();
+  await stopBroadcast().catch(showBackendError);
+}
+
+function updateBroadcastControl() {
+  if (!broadcastToggle || !broadcastLabel) return;
+
+  broadcastToggle.classList.toggle("is-on", state.broadcastEnabled);
+  broadcastToggle.setAttribute("aria-pressed", String(state.broadcastEnabled));
+  broadcastLabel.textContent = state.broadcastEnabled ? "Diffusion ON" : "Diffusion OFF";
+}
+
+function startBroadcastTimer() {
+  stopBroadcastTimer();
+  state.broadcastTimer = window.setInterval(() => {
+    sendBroadcastState(false).catch(showBackendError);
+  }, 1500);
+}
+
+function stopBroadcastTimer() {
+  if (!state.broadcastTimer) return;
+  window.clearInterval(state.broadcastTimer);
+  state.broadcastTimer = null;
+}
+
+function captureBroadcastPlayer(player) {
+  if (!state.broadcastEnabled || !player) return;
+  sendBroadcastState(true).catch(showBackendError);
+}
+
+function refreshBroadcastPlayer(player, immediate = false) {
+  if (!state.broadcastEnabled || !player) return;
+
+  const now = Date.now();
+  if (!immediate && now - state.lastBroadcastSentAt < 900) return;
+  state.lastBroadcastSentAt = now;
+  sendBroadcastState(false).catch(showBackendError);
+}
+
+async function sendBroadcastState(live) {
+  if (!state.broadcastEnabled && live) return;
+
+  const tracks = getBroadcastTracks();
+  const campaign = getActiveCampaign();
+  const response = await fetch("broadcast.php?action=update", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      live: state.broadcastEnabled,
+      isPlaying: tracks.length > 0,
+      campaignName: campaign?.name ?? null,
+      tracks,
+      trackId: tracks[0]?.trackId ?? null,
+      title: tracks[0]?.title ?? null,
+      file: tracks[0]?.file ?? null,
+      currentTime: tracks[0]?.currentTime ?? 0,
+      duration: tracks[0]?.duration ?? null,
+      volume: tracks[0]?.volume ?? 1,
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Impossible de mettre a jour la diffusion.");
+  }
+}
+
+async function stopBroadcast() {
+  const response = await fetch("broadcast.php?action=stop", { method: "POST" });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Impossible d'arreter la diffusion.");
+  }
+}
+
+function getBroadcastTracks() {
+  return [...document.querySelectorAll("audio.track-player")]
+    .filter((player) => !player.paused && !player.ended)
+    .map((player) => {
+      const metadata = getBroadcastTrackMetadata(player);
+      if (!metadata) return null;
+
+      return {
+        ...metadata,
+        currentTime: player.currentTime,
+        duration: Number.isFinite(player.duration) ? player.duration : null,
+        volume: player.volume,
+      };
+    })
+    .filter(Boolean);
+}
+
+function getBroadcastTrackMetadata(player) {
+  const item = player.closest(".track-item");
+  const campaign = getActiveCampaign();
+  const track = item && campaign ? findTrack(campaign, item.dataset.trackId) : null;
+  const file = getAudioFileName(track);
+  if (!item || !track || !file) return null;
+
+  return {
+    instanceId: player.dataset.broadcastInstanceId || item.dataset.trackId,
+    trackId: item.dataset.trackId,
+    title: track.title,
+    file,
+  };
+}
+
+function getAudioFileName(track) {
+  const audioUrl = track?.audioUrl ?? null;
+  if (!audioUrl || !audioUrl.startsWith("uploads/audio/")) return null;
+  return audioUrl.split("/").pop();
+}
+
 async function fadeOutPlaylist(playlistId) {
   const playlistPanel = libraryTree.querySelector(`[data-playlist-id="${CSS.escape(playlistId)}"]`);
   const players = new Set(state.playlistRuns.get(playlistId) ?? []);
@@ -1345,10 +1482,25 @@ async function renderTrack(track, campaign, locationType, playlistId) {
     player.preload = "metadata";
     player.src = audioUrl;
     player.volume = normalizeVolume(track.volume);
-    player.addEventListener("play", () => syncPlayerPlayingState(player, true));
-    player.addEventListener("pause", () => syncPlayerPlayingState(player, false));
-    player.addEventListener("ended", () => syncPlayerPlayingState(player, false));
-    player.addEventListener("volumechange", () => saveTrackVolume(player));
+    player.dataset.broadcastInstanceId = createId();
+    player.addEventListener("play", () => {
+      syncPlayerPlayingState(player, true);
+      captureBroadcastPlayer(player);
+    });
+    player.addEventListener("pause", () => {
+      syncPlayerPlayingState(player, false);
+      refreshBroadcastPlayer(player, true);
+    });
+    player.addEventListener("ended", () => {
+      syncPlayerPlayingState(player, false);
+      refreshBroadcastPlayer(player, true);
+    });
+    player.addEventListener("timeupdate", () => refreshBroadcastPlayer(player));
+    player.addEventListener("seeked", () => refreshBroadcastPlayer(player, true));
+    player.addEventListener("volumechange", () => {
+      saveTrackVolume(player);
+      refreshBroadcastPlayer(player, true);
+    });
     item.append(player);
   } else {
     const missing = document.createElement("span");
