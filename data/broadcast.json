@@ -1,5 +1,5 @@
 {
-    "live": true,
+    "live": false,
     "isPlaying": false,
     "trackId": null,
     "title": null,
@@ -9,5 +9,5 @@
     "duration": null,
     "volume": 1,
     "tracks": [],
-    "updatedAt": 1777560851
+    "updatedAt": 1777649004
 }

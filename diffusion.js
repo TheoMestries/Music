@@ -1,8 +1,10 @@
 const broadcastEndpoint = "broadcast.php";
+const audioFadeOutDuration = 1000;
 
 const diffusionState = {
   enabledByUser: false,
   players: new Map(),
+  fadeFrames: new Map(),
   lastState: null,
 };
 
@@ -96,7 +98,10 @@ function getStateTracks(state) {
 
 function getOrCreatePlayer(key, track) {
   const existing = diffusionState.players.get(key);
-  if (existing) return existing;
+  if (existing) {
+    cancelPlayerFade(key, existing);
+    return existing;
+  }
 
   const player = new Audio(`audio.php?broadcast=1&file=${encodeURIComponent(track.file)}`);
   player.preload = "auto";
@@ -109,10 +114,7 @@ function getOrCreatePlayer(key, track) {
 function removeInactivePlayers(activeKeys) {
   diffusionState.players.forEach((player, key) => {
     if (activeKeys.has(key)) return;
-    player.pause();
-    player.removeAttribute("src");
-    player.load();
-    diffusionState.players.delete(key);
+    fadeOutAndRemovePlayer(key, player);
   });
 }
 
@@ -147,7 +149,45 @@ function updateListenerVolume() {
 function updatePlayerVolume(player) {
   const listenerVolume = normalizeVolume(volumeInput.value);
   const sourceVolume = normalizeVolume(player.dataset.sourceVolume);
-  player.volume = listenerVolume * sourceVolume;
+  const fadeVolume = normalizeVolume(player.dataset.fadeVolume ?? 1);
+  player.volume = listenerVolume * sourceVolume * fadeVolume;
+}
+
+function fadeOutAndRemovePlayer(key, player) {
+  if (player.dataset.fadingOut === "true") return;
+
+  player.dataset.fadingOut = "true";
+  const startedAt = performance.now();
+
+  function tick(now) {
+    if (diffusionState.players.get(key) !== player) return;
+
+    const progress = Math.min(Math.max((now - startedAt) / audioFadeOutDuration, 0), 1);
+    player.dataset.fadeVolume = String(1 - progress);
+    updatePlayerVolume(player);
+
+    if (progress < 1) {
+      diffusionState.fadeFrames.set(key, requestAnimationFrame(tick));
+      return;
+    }
+
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+    diffusionState.players.delete(key);
+    diffusionState.fadeFrames.delete(key);
+  }
+
+  diffusionState.fadeFrames.set(key, requestAnimationFrame(tick));
+}
+
+function cancelPlayerFade(key, player) {
+  const frame = diffusionState.fadeFrames.get(key);
+  if (frame) cancelAnimationFrame(frame);
+  diffusionState.fadeFrames.delete(key);
+  delete player.dataset.fadingOut;
+  delete player.dataset.fadeVolume;
+  updatePlayerVolume(player);
 }
 
 function getExpectedTime(track, updatedAt) {

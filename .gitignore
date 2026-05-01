@@ -1,0 +1,35 @@
+# Local IDE/editor files
+.idea/
+.vscode/
+*.sublime-workspace
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Runtime data
+data/*.json
+!data/.htaccess
+!data/*.example.json
+
+# User uploads
+uploads/audio/*
+uploads/images/*
+!uploads/audio/.htaccess
+!uploads/images/.htaccess
+!uploads/**/.gitkeep
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Dependency/build folders, in case tooling is added later
+node_modules/
+vendor/
+dist/
+build/
+coverage/
