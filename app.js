@@ -1365,7 +1365,7 @@ async function fadeOutPausedPlayer(player) {
   try {
     await player.play().catch(() => {});
     if (!player.paused && !player.ended) {
-      await fadeOutPlayers([player], audioFadeOutDuration);
+      await fadeOutPlayerToPause(player, audioFadeOutDuration);
       clearPlaylistRunForPlayer(player);
       refreshBroadcastPlayer(player, true);
     } else {
@@ -1377,9 +1377,43 @@ async function fadeOutPausedPlayer(player) {
   }
 }
 
+function fadeOutPlayerToPause(player, duration) {
+  if (player.paused || player.ended) return Promise.resolve();
+
+  const startVolume = player.volume;
+  const startedAt = performance.now();
+
+  return new Promise((resolve) => {
+    function tick(now) {
+      const progress = Math.min(Math.max((now - startedAt) / duration, 0), 1);
+      player.dataset.fadingVolume = "true";
+      setPlayerVolume(player, startVolume * (1 - progress), true);
+
+      if (progress < 1 && !player.paused && !player.ended) {
+        requestAnimationFrame(tick);
+        return;
+      }
+
+      player.dataset.pauseFadeCompleted = "true";
+      player.pause();
+      setPlayerVolume(player, getSavedPlayerVolume(player), true);
+      delete player.dataset.fadingVolume;
+      syncPlayerPlayingState(player, false);
+      resolve();
+    }
+
+    requestAnimationFrame(tick);
+  });
+}
+
 function shouldFadePausedPlayer(player) {
   if (player.dataset.stoppingPlayer === "true") return false;
-  if (player.dataset.fadingVolume === "true" || player.dataset.manualFadeOut === "true") return false;
+  if (
+    player.dataset.fadingVolume === "true" ||
+    player.dataset.manualFadeOut === "true" ||
+    player.dataset.pauseFadeCompleted === "true"
+  ) return false;
+  if (player.seeking || player.dataset.seekingPlayer === "true") return false;
   if (player.ended || player.currentTime <= 0) return false;
   return !Number.isFinite(player.duration) || player.currentTime < player.duration;
 }
@@ -1550,23 +1584,45 @@ async function renderTrack(track, campaign, locationType, playlistId) {
     player.volume = normalizeVolume(track.volume);
     player.dataset.broadcastInstanceId = createId();
     player.addEventListener("play", () => {
+      delete player.dataset.pauseFadeCompleted;
       syncPlayerPlayingState(player, true);
       captureBroadcastPlayer(player);
     });
     player.addEventListener("pause", () => {
-      if (shouldFadePausedPlayer(player)) {
-        fadeOutPausedPlayer(player).catch(showBackendError);
-        return;
-      }
-      syncPlayerPlayingState(player, false);
-      refreshBroadcastPlayer(player, true);
+      const wasStopping = player.dataset.stoppingPlayer === "true";
+      requestAnimationFrame(() => {
+        if (!player.paused) return;
+
+        if (player.dataset.pauseFadeCompleted === "true") {
+          delete player.dataset.pauseFadeCompleted;
+          syncPlayerPlayingState(player, false);
+          refreshBroadcastPlayer(player, true);
+          return;
+        }
+
+        if (!wasStopping && shouldFadePausedPlayer(player)) {
+          fadeOutPausedPlayer(player).catch(showBackendError);
+          return;
+        }
+
+        syncPlayerPlayingState(player, false);
+        refreshBroadcastPlayer(player, true);
+      });
     });
     player.addEventListener("ended", () => {
       syncPlayerPlayingState(player, false);
       refreshBroadcastPlayer(player, true);
     });
     player.addEventListener("timeupdate", () => refreshBroadcastPlayer(player));
-    player.addEventListener("seeked", () => refreshBroadcastPlayer(player, true));
+    player.addEventListener("seeking", () => {
+      player.dataset.seekingPlayer = "true";
+    });
+    player.addEventListener("seeked", () => {
+      refreshBroadcastPlayer(player, true);
+      requestAnimationFrame(() => {
+        delete player.dataset.seekingPlayer;
+      });
+    });
     player.addEventListener("volumechange", () => {
       saveTrackVolume(player);
       refreshBroadcastPlayer(player, true);
