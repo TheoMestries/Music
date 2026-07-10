@@ -1,4 +1,5 @@
 const apiEndpoint = "api.php";
+const audioFadeOutDuration = 1000;
 
 const state = {
   campaigns: [],
@@ -126,7 +127,7 @@ libraryTree.addEventListener("click", (event) => {
   }
 
   if (playlistAction) {
-    handlePlaylistAction(playlistAction);
+    handlePlaylistAction(playlistAction).catch(showBackendError);
     return;
   }
 
@@ -149,6 +150,18 @@ libraryTree.addEventListener("click", (event) => {
   if (playlistPanel) return;
   if (panel) return;
 
+  if (playPlaylistButton) {
+    openPlaylistDetailInView(playPlaylistButton.dataset.playPlaylist)
+      .then(() => playPlaylist(playPlaylistButton.dataset.playPlaylist))
+      .catch(showBackendError);
+    return;
+  }
+
+  if (stopPlaylistButton) {
+    fadeOutPlaylist(stopPlaylistButton.dataset.stopPlaylist).catch(showBackendError);
+    return;
+  }
+
   if (folderButton) {
     state.selectedFolderId = folderButton.dataset.folderSelect;
     renderActiveCampaign();
@@ -160,16 +173,6 @@ libraryTree.addEventListener("click", (event) => {
     state.playlistOpenTimer = window.setTimeout(async () => {
       await openPlaylistDetailInView(playlistButton.dataset.playlistSelect);
     }, 220);
-    return;
-  }
-
-  if (playPlaylistButton) {
-    playPlaylist(playPlaylistButton.dataset.playPlaylist);
-    return;
-  }
-
-  if (stopPlaylistButton) {
-    stopPlaylist(stopPlaylistButton.dataset.stopPlaylist);
     return;
   }
 
@@ -196,7 +199,13 @@ libraryTree.addEventListener("dblclick", (event) => {
 libraryTree.addEventListener("change", (event) => {
   const playlistLoop = event.target.closest("[data-playlist-loop]");
   const playlistShuffle = event.target.closest("[data-playlist-shuffle]");
+  const playlistImageInput = event.target.closest("[data-playlist-image-input]");
   const trackLoop = event.target.closest("[data-track-loop]");
+
+  if (playlistImageInput) {
+    updatePlaylistImage(playlistImageInput).catch(showBackendError);
+    return;
+  }
 
   if (playlistLoop) {
     updatePlaylistLoop(playlistLoop);
@@ -430,6 +439,7 @@ playlistForm.addEventListener("submit", (event) => {
     name,
     loop: false,
     shuffleOnPlay: false,
+    imageUrl: null,
     tracks: [],
   };
 
@@ -517,6 +527,7 @@ function normalizePlaylist(playlist) {
     ...playlist,
     loop: playlist.loop ?? false,
     shuffleOnPlay: playlist.shuffleOnPlay ?? playlist.autoplayShuffleOnOpen ?? false,
+    imageUrl: playlist.imageUrl ?? null,
     tracks: (playlist.tracks ?? []).map(normalizeTrack),
   };
 }
@@ -857,10 +868,16 @@ function renderPlaylistPanel(campaign) {
         <div class="playlist-tile-top">
           <span></span>
           <div class="playlist-actions">
+            <button type="button" class="playlist-tile-play-button" data-play-playlist="${playlist.id}" aria-label="Lancer ${escapeHtml(playlist.name)}">&#9654;</button>
             <button type="button" class="playlist-menu-button" data-playlist-menu aria-label="Actions pour ${escapeHtml(playlist.name)}">⋮</button>
             <div class="playlist-action-panel hidden">
               <button type="button" data-playlist-action="rename">Modifier le nom</button>
               <button type="button" data-playlist-action="delete">Supprimer la playlist</button>
+              <label class="playlist-image-picker">
+                <span>Changer l'image</span>
+                <input type="file" accept="image/*" data-playlist-image-input="${playlist.id}">
+              </label>
+              <button type="button" data-playlist-action="remove-image" ${playlist.imageUrl ? "" : "disabled"}>Retirer l'image</button>
               <label>
                 <span>Duppliquer la playlist dans</span>
                 <select data-playlist-duplicate-target></select>
@@ -869,7 +886,7 @@ function renderPlaylistPanel(campaign) {
             </div>
           </div>
         </div>
-        <span class="playlist-disc" aria-hidden="true"></span>
+        ${renderPlaylistVisual(playlist)}
         <strong>${escapeHtml(playlist.name)}</strong>
         <small>${playlist.tracks.length} musique${playlist.tracks.length > 1 ? "s" : ""}</small>
       `;
@@ -883,6 +900,15 @@ function renderPlaylistPanel(campaign) {
 
   panel.append(grid);
   return panel;
+}
+
+function renderPlaylistVisual(playlist) {
+  const imageUrl = getPlaylistImageUrl(playlist);
+  if (!imageUrl) {
+    return `<span class="playlist-disc" aria-hidden="true"></span>`;
+  }
+
+  return `<img class="playlist-image" src="${escapeAttribute(imageUrl)}" alt="" aria-hidden="true">`;
 }
 
 async function renderLooseTracks(tracks, campaign) {
@@ -1147,10 +1173,14 @@ function stopPanelPlayers(playlistPanel) {
 
 function stopPlayers(players) {
   players.forEach((player) => {
+    player.dataset.stoppingPlayer = "true";
     player.pause();
     player.currentTime = 0;
     player.onended = null;
     setPlayerVolume(player, getSavedPlayerVolume(player), true);
+    requestAnimationFrame(() => {
+      delete player.dataset.stoppingPlayer;
+    });
   });
 }
 
@@ -1291,7 +1321,7 @@ async function fadeOutPlaylist(playlistId) {
     return;
   }
 
-  await fadeOutPlayers([...players], 650);
+  await fadeOutPlayers([...players], audioFadeOutDuration);
   state.playlistRuns.delete(playlistId);
   state.playlistCurrentTrackIds.delete(playlistId);
   updatePlayingTrackDisplay(playlistId);
@@ -1325,6 +1355,76 @@ function fadeOutPlayers(players, duration) {
     }
 
     requestAnimationFrame(tick);
+  });
+}
+
+async function fadeOutPausedPlayer(player) {
+  if (player.dataset.manualFadeOut === "true" || player.dataset.stoppingPlayer === "true") return;
+
+  player.dataset.manualFadeOut = "true";
+  try {
+    await player.play().catch(() => {});
+    if (!player.paused && !player.ended) {
+      await fadeOutPlayerToPause(player, audioFadeOutDuration);
+      clearPlaylistRunForPlayer(player);
+      refreshBroadcastPlayer(player, true);
+    } else {
+      syncPlayerPlayingState(player, false);
+      refreshBroadcastPlayer(player, true);
+    }
+  } finally {
+    delete player.dataset.manualFadeOut;
+  }
+}
+
+function fadeOutPlayerToPause(player, duration) {
+  if (player.paused || player.ended) return Promise.resolve();
+
+  const startVolume = player.volume;
+  const startedAt = performance.now();
+
+  return new Promise((resolve) => {
+    function tick(now) {
+      const progress = Math.min(Math.max((now - startedAt) / duration, 0), 1);
+      player.dataset.fadingVolume = "true";
+      setPlayerVolume(player, startVolume * (1 - progress), true);
+
+      if (progress < 1 && !player.paused && !player.ended) {
+        requestAnimationFrame(tick);
+        return;
+      }
+
+      player.dataset.pauseFadeCompleted = "true";
+      player.pause();
+      setPlayerVolume(player, getSavedPlayerVolume(player), true);
+      delete player.dataset.fadingVolume;
+      syncPlayerPlayingState(player, false);
+      resolve();
+    }
+
+    requestAnimationFrame(tick);
+  });
+}
+
+function shouldFadePausedPlayer(player) {
+  if (player.dataset.stoppingPlayer === "true") return false;
+  if (
+    player.dataset.fadingVolume === "true" ||
+    player.dataset.manualFadeOut === "true" ||
+    player.dataset.pauseFadeCompleted === "true"
+  ) return false;
+  if (player.seeking || player.dataset.seekingPlayer === "true") return false;
+  if (player.ended || player.currentTime <= 0) return false;
+  return !Number.isFinite(player.duration) || player.currentTime < player.duration;
+}
+
+function clearPlaylistRunForPlayer(player) {
+  state.playlistRuns.forEach((players, playlistId) => {
+    if (!players.includes(player)) return;
+
+    state.playlistRuns.delete(playlistId);
+    state.playlistCurrentTrackIds.delete(playlistId);
+    updatePlayingTrackDisplay(playlistId);
   });
 }
 
@@ -1484,19 +1584,45 @@ async function renderTrack(track, campaign, locationType, playlistId) {
     player.volume = normalizeVolume(track.volume);
     player.dataset.broadcastInstanceId = createId();
     player.addEventListener("play", () => {
+      delete player.dataset.pauseFadeCompleted;
       syncPlayerPlayingState(player, true);
       captureBroadcastPlayer(player);
     });
     player.addEventListener("pause", () => {
-      syncPlayerPlayingState(player, false);
-      refreshBroadcastPlayer(player, true);
+      const wasStopping = player.dataset.stoppingPlayer === "true";
+      requestAnimationFrame(() => {
+        if (!player.paused) return;
+
+        if (player.dataset.pauseFadeCompleted === "true") {
+          delete player.dataset.pauseFadeCompleted;
+          syncPlayerPlayingState(player, false);
+          refreshBroadcastPlayer(player, true);
+          return;
+        }
+
+        if (!wasStopping && shouldFadePausedPlayer(player)) {
+          fadeOutPausedPlayer(player).catch(showBackendError);
+          return;
+        }
+
+        syncPlayerPlayingState(player, false);
+        refreshBroadcastPlayer(player, true);
+      });
     });
     player.addEventListener("ended", () => {
       syncPlayerPlayingState(player, false);
       refreshBroadcastPlayer(player, true);
     });
     player.addEventListener("timeupdate", () => refreshBroadcastPlayer(player));
-    player.addEventListener("seeked", () => refreshBroadcastPlayer(player, true));
+    player.addEventListener("seeking", () => {
+      player.dataset.seekingPlayer = "true";
+    });
+    player.addEventListener("seeked", () => {
+      refreshBroadcastPlayer(player, true);
+      requestAnimationFrame(() => {
+        delete player.dataset.seekingPlayer;
+      });
+    });
     player.addEventListener("volumechange", () => {
       saveTrackVolume(player);
       refreshBroadcastPlayer(player, true);
@@ -1534,6 +1660,18 @@ function updatePlaylistShuffle(input) {
 
   touch(campaign);
   saveCampaigns().catch(showBackendError);
+}
+
+async function updatePlaylistImage(input) {
+  const campaign = getActiveCampaign();
+  const playlist = findPlaylist(campaign, input.dataset.playlistImageInput);
+  const file = input.files?.[0];
+  if (!campaign || !playlist || !file) return;
+
+  playlist.imageUrl = await savePlaylistImageFile(playlist.id, file);
+  touch(campaign);
+  await saveCampaigns();
+  await renderActiveCampaign();
 }
 
 function updateTrackLoop(input) {
@@ -1681,7 +1819,7 @@ function deleteFolder(campaign, folderId) {
   persistAndRender();
 }
 
-function handlePlaylistAction(actionButton) {
+async function handlePlaylistAction(actionButton) {
   const campaign = getActiveCampaign();
   const tile = actionButton.closest(".playlist-tile");
   if (!campaign || !tile) return;
@@ -1694,6 +1832,16 @@ function handlePlaylistAction(actionButton) {
 
   if (actionButton.dataset.playlistAction === "delete") {
     deletePlaylistFromFolder(campaign, tile.dataset.folderId, tile.dataset.playlistSelect);
+  }
+
+  if (actionButton.dataset.playlistAction === "remove-image") {
+    const playlist = findPlaylist(campaign, tile.dataset.playlistSelect);
+    if (!playlist) return;
+
+    await deletePlaylistImageFile(playlist.id);
+    playlist.imageUrl = null;
+    touch(campaign);
+    persistAndRender();
   }
 
   if (actionButton.dataset.playlistAction === "duplicate") {
@@ -1744,6 +1892,7 @@ function clonePlaylist(playlist) {
   return {
     ...playlist,
     id: createId(),
+    imageUrl: null,
     tracks: playlist.tracks.map((track) => ({ ...track })),
   };
 }
@@ -1825,6 +1974,33 @@ async function saveAudioFile(trackId, file) {
   return payload.url;
 }
 
+async function savePlaylistImageFile(playlistId, file) {
+  const formData = new FormData();
+  formData.append("playlistId", playlistId);
+  formData.append("image", file);
+
+  const response = await fetch(`${apiEndpoint}?action=uploadPlaylistImage`, {
+    method: "POST",
+    body: formData,
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Impossible d'uploader l'image.");
+  }
+  return payload.url;
+}
+
+function getPlaylistImageUrl(playlist) {
+  const imageUrl = playlist.imageUrl ?? null;
+  if (!imageUrl) return null;
+
+  if (imageUrl.startsWith("uploads/images/")) {
+    return imageUrl;
+  }
+
+  return imageUrl;
+}
+
 function getAudioUrl(track) {
   const audioUrl = track.audioUrl ?? null;
   if (!audioUrl) return null;
@@ -1847,6 +2023,20 @@ async function deleteAudioFile(trackId) {
   const payload = await response.json();
   if (!response.ok) {
     throw new Error(payload.error || "Impossible de supprimer le fichier audio.");
+  }
+}
+
+async function deletePlaylistImageFile(playlistId) {
+  const response = await fetch(`${apiEndpoint}?action=deletePlaylistImage`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ playlistId }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Impossible de supprimer l'image.");
   }
 }
 
@@ -2057,6 +2247,10 @@ function escapeHtml(value) {
   const element = document.createElement("span");
   element.textContent = value;
   return element.innerHTML;
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(String(value)).replaceAll('"', "&quot;");
 }
 
 initializeApp();

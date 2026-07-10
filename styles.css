@@ -695,6 +695,9 @@ select:focus {
 
 .playlist-actions {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .playlist-tile-top {
@@ -721,6 +724,24 @@ select:focus {
   font-size: 16px;
   font-weight: 800;
   line-height: 1;
+}
+
+.playlist-tile-play-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.playlist-tile-play-button:hover {
+  background: var(--accent-dark);
 }
 
 .playlist-menu-button:hover {
@@ -774,6 +795,29 @@ select:focus {
   font-size: 12px;
 }
 
+.playlist-image-picker {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--track-bg);
+  color: var(--ink) !important;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.playlist-image-picker:hover {
+  border-color: var(--accent);
+}
+
+.playlist-image-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .playlist-tile:hover,
 .playlist-tile.active {
   border-color: #c6b21f;
@@ -801,6 +845,16 @@ select:focus {
   background:
     radial-gradient(circle, var(--panel-yellow) 0 15%, #262b29 16% 28%, #111 29% 40%, #3d3d3d 41% 58%, #111 59%);
   box-shadow: 0 8px 18px rgba(32, 37, 35, 0.12);
+}
+
+.playlist-image {
+  display: block;
+  width: 62px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #111;
+  box-shadow: 0 8px 18px rgba(32, 37, 35, 0.16);
 }
 
 .playlist-detail-header {
