@@ -1,0 +1,143 @@
+[
+    {
+        "id": "875a4a4b-5abd-49c4-bcc8-73d7c1596830",
+        "name": "test",
+        "createdAt": "2026-04-28T12:58:16.223Z",
+        "updatedAt": "2026-04-30T14:52:06.757Z",
+        "playlists": [],
+        "tracks": [],
+        "folders": [
+            {
+                "id": "694319f5-d372-4c71-8b75-3dd828d667d3",
+                "name": "test",
+                "playlists": [
+                    {
+                        "id": "2efe078c-ca0d-469a-8163-42949575d32c",
+                        "name": "test12",
+                        "loop": false,
+                        "autoplayOnOpen": false,
+                        "autoplayShuffleOnOpen": false,
+                        "tracks": [
+                            {
+                                "id": "f18e71be-5391-4a9d-97e1-bce7e82cc1ff",
+                                "title": "test121",
+                                "loop": false,
+                                "fileName": "Collier manquant.mp3",
+                                "fileType": "audio\/mpeg",
+                                "fileSize": 3899076,
+                                "audioUrl": "uploads\/audio\/f18e71be-5391-4a9d-97e1-bce7e82cc1ff.mp3",
+                                "volume": 1
+                            }
+                        ],
+                        "shuffleOnPlay": false
+                    }
+                ]
+            },
+            {
+                "id": "ca5e7fda-783e-4e86-91d8-b06a30a99578",
+                "name": "test25",
+                "playlists": [
+                    {
+                        "id": "1d990050-692f-44f1-b01c-2f3b02197fe6",
+                        "name": "test215",
+                        "loop": false,
+                        "autoplayOnOpen": false,
+                        "autoplayShuffleOnOpen": false,
+                        "tracks": [],
+                        "shuffleOnPlay": false
+                    },
+                    {
+                        "id": "2398d090-35dd-4f05-a38e-e772e8681b85",
+                        "name": "test11 copie",
+                        "loop": true,
+                        "autoplayOnOpen": true,
+                        "autoplayShuffleOnOpen": true,
+                        "tracks": [
+                            {
+                                "id": "eb63e3fd-807f-48e8-8b92-30a903e0a415",
+                                "title": "test112",
+                                "loop": false,
+                                "fileName": "Couplet 1 (4).mp3",
+                                "fileType": "audio\/mpeg",
+                                "fileSize": 3124297,
+                                "audioUrl": "uploads\/audio\/eb63e3fd-807f-48e8-8b92-30a903e0a415.mp3",
+                                "volume": 0.6750000000000000444089209850062616169452667236328125
+                            },
+                            {
+                                "id": "5b199204-0e46-441b-989c-193228d45d0f",
+                                "title": "xssqdqs",
+                                "loop": false,
+                                "fileName": "Labyrinthe tortueux(2).mp3",
+                                "fileType": "audio\/mpeg",
+                                "fileSize": 3564618,
+                                "audioUrl": "uploads\/audio\/5b199204-0e46-441b-989c-193228d45d0f.mp3",
+                                "volume": 1
+                            }
+                        ],
+                        "shuffleOnPlay": true
+                    },
+                    {
+                        "id": "bb70e51a-ed9b-4315-9b1d-f2ab623d4ab4",
+                        "name": "test11",
+                        "loop": true,
+                        "autoplayOnOpen": true,
+                        "autoplayShuffleOnOpen": true,
+                        "tracks": [
+                            {
+                                "id": "f0c003bb-cf8e-44d3-81e0-dd083e1f6b57",
+                                "title": "test111",
+                                "loop": true,
+                                "fileName": "Labyrinthe tortueux(2).mp3",
+                                "fileType": "audio\/mpeg",
+                                "fileSize": 3564618,
+                                "audioUrl": "uploads\/audio\/f0c003bb-cf8e-44d3-81e0-dd083e1f6b57.mp3",
+                                "volume": 1
+                            },
+                            {
+                                "id": "eb63e3fd-807f-48e8-8b92-30a903e0a415",
+                                "title": "test112",
+                                "loop": false,
+                                "fileName": "Couplet 1 (4).mp3",
+                                "fileType": "audio\/mpeg",
+                                "fileSize": 3124297,
+                                "audioUrl": "uploads\/audio\/eb63e3fd-807f-48e8-8b92-30a903e0a415.mp3",
+                                "volume": 0.6750000000000000444089209850062616169452667236328125
+                            },
+                            {
+                                "id": "bc4c053e-a66b-4eba-b82c-ee75f07114da",
+                                "title": "cvxxcvxcv",
+                                "loop": false,
+                                "fileName": "Labyrinthe tortueux(2).mp3",
+                                "fileType": "audio\/mpeg",
+                                "fileSize": 3564618,
+                                "audioUrl": "uploads\/audio\/bc4c053e-a66b-4eba-b82c-ee75f07114da.mp3",
+                                "volume": 1
+                            },
+                            {
+                                "id": "b08f016e-c53a-42ae-9c2c-25e7c5710636",
+                                "title": "cxwwxxw",
+                                "loop": false,
+                                "fileName": "Couplet 1 (4).mp3",
+                                "fileType": "audio\/mpeg",
+                                "fileSize": 3124297,
+                                "audioUrl": "uploads\/audio\/b08f016e-c53a-42ae-9c2c-25e7c5710636.mp3",
+                                "volume": 1
+                            },
+                            {
+                                "id": "0c8d907c-7cf5-4354-a64d-4c23c910bc1a",
+                                "title": "xwxwxw",
+                                "loop": false,
+                                "fileName": "Couplet 1 (3).mp3",
+                                "fileType": "audio\/mpeg",
+                                "fileSize": 2977525,
+                                "audioUrl": "uploads\/audio\/0c8d907c-7cf5-4354-a64d-4c23c910bc1a.mp3",
+                                "volume": 1
+                            }
+                        ],
+                        "shuffleOnPlay": true
+                    }
+                ]
+            }
+        ]
+    }
+]

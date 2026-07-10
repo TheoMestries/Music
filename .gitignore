@@ -1,0 +1,8 @@
+/map/data/*.sqlite
+/map/data/*.sqlite-shm
+/map/data/*.sqlite-wal
+/map/data/*.db
+/map/data/*.db-shm
+/map/data/*.db-wal
+/map/data/*.sqlite-journal
+/map/data/*.db-journal
