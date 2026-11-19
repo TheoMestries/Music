@@ -83,15 +83,14 @@ function mapRenderAppHeader(array $currentUser, string $activeNav = 'home'): voi
     <header class="app-header">
       <div class="header-bar">
         <div class="brand-block">
-          <p class="eyebrow">Outil de cartes JDR</p>
           <h1><?= mapEscape(MAP_APP_NAME) ?></h1>
         </div>
 
         <nav class="app-nav" aria-label="Navigation principale">
-          <a class="<?= mapEscape(mapNavClass('home', $activeNav)) ?>" href="<?= mapEscape(mapUrl('/index.php')) ?>">Accueil</a>
-          <a class="<?= mapEscape(mapNavClass('campaigns', $activeNav)) ?>" href="<?= mapEscape(mapUrl('/index.php#campaigns-section')) ?>">Campagnes</a>
+          <a class="<?= mapEscape(mapNavClass('campaigns', $activeNav)) ?>" href="<?= mapEscape(mapUrl('/index.php')) ?>">Mes parties</a>
           <?php if ((string) $currentUser['role'] === 'admin'): ?>
             <a class="<?= mapEscape(mapNavClass('users', $activeNav)) ?>" href="<?= mapEscape(mapUrl('/admin/users.php')) ?>">Utilisateurs</a>
+            <a class="<?= mapEscape(mapNavClass('dice-settings', $activeNav)) ?>" href="<?= mapEscape(mapUrl('/admin/dice-settings.php')) ?>">Reglages des</a>
           <?php endif; ?>
         </nav>
 
@@ -114,8 +113,9 @@ function mapRenderAppHeader(array $currentUser, string $activeNav = 'home'): voi
     <?php
 }
 
-function mapRenderPageStart(string $title, array $currentUser, string $activeNav = 'home'): void
+function mapRenderPageStart(string $title, array $currentUser, string $activeNav = 'home', bool $isTable = false): void
 {
+    $bodyClass = $isTable ? 'table-page' : (($_GET['embedded'] ?? null) === '1' ? 'embedded-tool' : '');
     ?>
     <!doctype html>
     <html lang="fr">
@@ -123,21 +123,26 @@ function mapRenderPageStart(string $title, array $currentUser, string $activeNav
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title><?= mapEscape($title) ?> - <?= mapEscape(MAP_APP_NAME) ?></title>
-        <link rel="stylesheet" href="<?= mapEscape(mapUrl('/css/map.css')) ?>">
+        <link rel="stylesheet" href="<?= mapEscape(mapUrl('/css/map.css?v=board-settings-1')) ?>">
       </head>
-      <body>
+      <body class="<?= $bodyClass ?>">
         <div class="app-layout">
-          <?php mapRenderAppHeader($currentUser, $activeNav); ?>
+          <?php if (!$isTable) mapRenderAppHeader($currentUser, $activeNav); ?>
           <main class="content-shell">
     <?php
 }
 
-function mapRenderPageEnd(): void
+function mapRenderPageEnd(array $additionalScripts = []): void
 {
     ?>
           </main>
         </div>
-        <script src="<?= mapEscape(mapUrl('/js/app.js')) ?>"></script>
+        <script src="<?= mapEscape(mapUrl('/js/windows.js?v=3')) ?>"></script>
+        <script src="<?= mapEscape(mapUrl('/js/character-sheets.js?v=sheets-1')) ?>"></script>
+        <script src="<?= mapEscape(mapUrl('/js/app.js?v=sus20-1')) ?>"></script>
+        <?php foreach ($additionalScripts as $script): ?>
+          <script src="<?= mapEscape(mapUrl((string) $script) . '?v=board-view-1') ?>"></script>
+        <?php endforeach; ?>
       </body>
     </html>
     <?php
@@ -153,9 +158,9 @@ function mapRenderStatusPage(string $title, string $message, int $statusCode, ?a
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title><?= mapEscape($title) ?> - <?= mapEscape(MAP_APP_NAME) ?></title>
-        <link rel="stylesheet" href="<?= mapEscape(mapUrl('/css/map.css')) ?>">
+        <link rel="stylesheet" href="<?= mapEscape(mapUrl('/css/map.css?v=board-settings-1')) ?>">
       </head>
-      <body>
+      <body class="<?= isset($_GET['embedded']) && $_GET['embedded'] === '1' ? 'embedded-tool' : '' ?>">
         <?php if ($currentUser !== null): ?>
           <div class="app-layout">
             <?php mapRenderAppHeader($currentUser); ?>

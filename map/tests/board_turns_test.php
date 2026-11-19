@@ -1,0 +1,44 @@
+<?php
+declare(strict_types=1);
+require __DIR__.'/board_entities_test.php';
+
+$page = ['pageId'=>$pageId];
+$token = $page + ['entityId'=>$entity['id'],'layer'=>'players','initiative'=>14];
+$privateToken = $page + ['entityId'=>$hidden['id'],'layer'=>'gm','initiative'=>8];
+$turns = static fn($board) => $board['activePage']['turns'];
+expectNotesException(MapHttpException::class,404,static fn()=>mapMutateBoardTurns(1,'turn_add_entity',$token,$playerTwo),'Contrôle du jeton requis.');
+$public = $turns(mapMutateBoardTurns(1,'turn_add_entity',$token,$playerOne));
+$entryId = $public['activeId'];
+assertNotesTest($public['activeEntityId']===$entity['id'],'Le premier jeton ajouté prend le tour.');
+assertNotesTest(count($turns(mapMutateBoardTurns(1,'turn_add_entity',$token,$playerOne))['entries'])===1,'Un double ajout ne crée pas de doublon.');
+expectNotesException(MapHttpException::class,403,static fn()=>mapMutateBoardTurns(1,'turn_next',$page,$playerOne),'Le MJ avance le tour.');
+$edit = $page + ['entryId'=>$entryId,'initiative'=>17.5];
+expectNotesException(MapHttpException::class,404,static fn()=>mapMutateBoardTurns(1,'turn_update',$edit,$playerTwo),'Initiative d’un autre joueur protégée.');
+mapMutateBoardTurns(1,'turn_update',$edit,$playerOne);
+mapMutateBoardTurns(1,'turn_add_entity',$privateToken,$owner);
+mapMutateBoardTurns(1,'turn_add_custom',$page + ['label'=>'Rounds','initiative'=>3,'increment'=>1],$owner);
+assertNotesTest(array_column($turns(mapBoardSnapshot(1,$playerOne))['entries'],'initiative')===[17.5,3.0],'L’initiative est diffusée et le jeton MJ est filtré.');
+mapMutateBoardTurns(1,'turn_next',$page,$owner);
+$secretTurn = $turns(mapBoardSnapshot(1,$playerOne));
+assertNotesTest($secretTurn['activeId']===null && $secretTurn['activeEntityId']===null,'Le tour MJ ne révèle pas le jeton actif.');
+$counter = $turns(mapMutateBoardTurns(1,'turn_next',$page,$owner));
+assertNotesTest(end($counter['entries'])['id']===$counter['activeId'],'Le compteur est une entrée de la liste.');
+$roundTrip = $turns(mapMutateBoardTurns(1,'turn_next',$page,$owner));
+assertNotesTest($roundTrip['activeId']===$entryId && end($roundTrip['entries'])['initiative']===4.0,'La liste boucle et le compteur avance.');
+$reverse = $turns(mapMutateBoardTurns(1,'turn_previous',$page,$owner));
+assertNotesTest(end($reverse['entries'])['initiative']===3.0,'Le tour précédent annule la variation du compteur.');
+$ascending = $turns(mapMutateBoardTurns(1,'turn_sort',$page + ['mode'=>'low'],$owner));
+assertNotesTest(array_column($ascending['entries'],'initiative')===[3.0,8.0,17.5],'Tri croissant.');
+mapMutateBoardTurns(1,'turn_auto_sort',$page + ['enabled'=>true],$owner);
+$auto = $turns(mapMutateBoardTurns(1,'turn_update',array_replace($edit,['initiative'=>1]),$playerOne));
+assertNotesTest($auto['autoSort'] && array_column($auto['entries'],'initiative')===[1.0,3.0],'Le tri automatique tient compte d’une initiative modifiée.');
+
+$pages = mapBoardSnapshot(1,$owner)['pages'];
+$otherPage = end($pages)['id'];
+expectNotesException(MapHttpException::class,403,static fn()=>mapMutateBoardTurns(1,'turn_clear',['pageId'=>$otherPage],$owner),'Le MJ agit sur sa page active.');
+$other = $turns(mapBoardAction(1,'go',['pageId'=>$otherPage],$owner));
+assertNotesTest($other['entries']===[],'Chaque page a sa propre liste.');
+mapBoardAction(1,'go',$page,$owner);
+$cleared = $turns(mapMutateBoardTurns(1,'turn_clear',$page,$owner));
+assertNotesTest($cleared['activeId']===null && $cleared['entries']===[],'Effacer retire le tour actif et les entrées.');
+echo "OK - initiatives, droits, tours privés, tri, compteurs et isolation des pages.\n";

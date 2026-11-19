@@ -1,16 +1,17 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/campaign-lobby.php';
 
 $error = '';
 $info = '';
 $username = '';
 $hasUsers = false;
 $flashMessages = [];
+$invite = mapInvitationToken($_GET['invite'] ?? null);
 
 try {
-    mapRedirectIfAuthenticated();
+    if (mapGetCurrentUser() !== null) mapFinishAccountEntry($invite);
     $hasUsers = mapUsersExist();
     $flashMessages = mapConsumeFlashMessages();
 
@@ -29,7 +30,7 @@ try {
             $error = 'Aucun compte n existe encore. Lancez d abord la configuration initiale.';
         } else {
             mapAuthenticateUser($username, $password);
-            mapRedirect('/index.php');
+            mapFinishAccountEntry($invite);
         }
     }
 } catch (DomainException $exception) {
@@ -50,9 +51,8 @@ try {
   <body>
     <main class="page-shell">
       <section class="panel panel-narrow">
-        <p class="eyebrow">Outil de cartes JDR</p>
         <h1><?= mapEscape(MAP_APP_NAME) ?></h1>
-        <p class="muted">Connexion au module de cartes, completement separe de l outil musical.</p>
+        <?php if ($invite !== null): ?><p class="muted">Connectez-vous pour rejoindre la partie.</p><?php endif; ?>
 
         <?php foreach ($flashMessages as $flash): ?>
           <?php if (!is_array($flash)) { continue; } ?>
@@ -83,7 +83,9 @@ try {
           <button type="submit" class="button">Se connecter</button>
         </form>
 
-        <?php if (!$hasUsers): ?>
+        <?php if ($hasUsers): ?>
+          <p class="helper-text">Nouveau sur <?= mapEscape(MAP_APP_NAME) ?> ? <a href="<?= mapEscape(mapUrlWithQuery('/register.php', $invite === null ? [] : ['invite'=>$invite])) ?>">Créer un compte</a></p>
+        <?php else: ?>
           <p class="helper-text">Aucun compte configure. <a href="./setup.php">Creer le premier administrateur</a>.</p>
         <?php endif; ?>
       </section>

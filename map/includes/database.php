@@ -1,21 +1,29 @@
 <?php
 declare(strict_types=1);
 
+const MAP_MIGRATIONS_DIRECTORY = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'migrations';
+
 function mapDatabasePath(): string
 {
+    $overridePath = getenv('ATLAS_JDR_DATABASE_PATH');
+
+    if (is_string($overridePath) && trim($overridePath) !== '') {
+        return $overridePath;
+    }
+
     return __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'map.sqlite';
 }
 
-function mapEnsureDataDirectoryExists(): void
+function mapEnsureDatabaseDirectoryExists(string $databasePath): void
 {
-    $directory = dirname(mapDatabasePath());
+    $directory = dirname($databasePath);
 
     if (is_dir($directory)) {
         return;
     }
 
     if (!mkdir($directory, 0775, true) && !is_dir($directory)) {
-        throw new RuntimeException('Impossible de creer le dossier de donnees de l outil de cartes.');
+        throw new RuntimeException('Impossible de créer le dossier de données.');
     }
 }
 
@@ -28,11 +36,22 @@ function mapGetDatabase(): PDO
         return $pdo;
     }
 
-    mapEnsureDataDirectoryExists();
+    $pdo = mapOpenDatabase(mapDatabasePath());
+
+    return $pdo;
+}
+
+function mapOpenDatabase(string $databasePath): PDO
+{
+    mapEnsureDatabaseDirectoryExists($databasePath);
+
+    if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
+        throw new RuntimeException('L’extension PHP pdo_sqlite doit être active pour utiliser Sus20.');
+    }
 
     try {
         $pdo = new PDO(
-            'sqlite:' . mapDatabasePath(),
+            'sqlite:' . $databasePath,
             null,
             null,
             [
@@ -42,95 +61,177 @@ function mapGetDatabase(): PDO
             ]
         );
     } catch (PDOException $exception) {
-        throw new RuntimeException('Impossible d initialiser la base SQLite de l outil de cartes.', 0, $exception);
+        throw new RuntimeException('Impossible d’initialiser la base SQLite.', 0, $exception);
     }
 
     $pdo->exec('PRAGMA foreign_keys = ON');
-    mapInitializeDatabase($pdo);
+    $pdo->exec('PRAGMA busy_timeout = 5000');
+    $pdo->exec('PRAGMA journal_mode = WAL');
+    mapRunDatabaseMigrations($pdo);
 
     return $pdo;
 }
 
-function mapInitializeDatabase(PDO $pdo): void
+function mapEnsureMigrationTable(PDO $pdo): void
 {
-    $statements = [
-        "CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL COLLATE NOCASE UNIQUE,
-            display_name TEXT NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL CHECK (role IN ('admin', 'gm', 'player')),
-            is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )",
-        "CREATE TABLE IF NOT EXISTS campaigns (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            description TEXT DEFAULT NULL,
-            owner_user_id INTEGER NOT NULL,
-            is_archived INTEGER NOT NULL DEFAULT 0 CHECK (is_archived IN (0, 1)),
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE
-        )",
-        "CREATE TABLE IF NOT EXISTS campaign_members (
-            campaign_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            member_role TEXT NOT NULL CHECK (member_role IN ('gm', 'player')),
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (campaign_id, user_id),
-            FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE ON UPDATE CASCADE,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
-        )",
-    ];
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )"
+    );
+}
 
-    foreach ($statements as $statement) {
-        $pdo->exec($statement);
+function mapLoadDatabaseMigrations(): array
+{
+    $files = glob(MAP_MIGRATIONS_DIRECTORY . DIRECTORY_SEPARATOR . '*.php');
+
+    if ($files === false) {
+        throw new RuntimeException('Impossible de lire le dossier des migrations SQLite.');
     }
 
-    mapRunDatabaseMigrations($pdo);
-    mapEnsureIndexes($pdo);
+    sort($files, SORT_STRING);
+    $migrations = [];
+
+    foreach ($files as $file) {
+        $definition = require $file;
+        $fileName = basename($file);
+
+        if (!preg_match('/^(\d+)_([a-z0-9_]+)\.php$/', $fileName, $matches)) {
+            throw new RuntimeException('Nom de fichier de migration invalide : ' . $fileName);
+        }
+
+        if (!is_array($definition)) {
+            throw new RuntimeException('Definition de migration invalide : ' . $fileName);
+        }
+
+        $version = $definition['version'] ?? null;
+        $name = $definition['name'] ?? null;
+        $up = $definition['up'] ?? null;
+
+        if (!is_int($version) || $version < 1 || $version !== (int) $matches[1]) {
+            throw new RuntimeException('Version de migration invalide : ' . $fileName);
+        }
+
+        if (!is_string($name) || $name === '' || $name !== $matches[2]) {
+            throw new RuntimeException('Nom de migration incoherent : ' . $fileName);
+        }
+
+        if (!is_callable($up)) {
+            throw new RuntimeException('Action de migration manquante : ' . $fileName);
+        }
+
+        if (isset($migrations[$version])) {
+            throw new RuntimeException('Version de migration dupliquee : ' . $version);
+        }
+
+        $migrations[$version] = [
+            'version' => $version,
+            'name' => $name,
+            'up' => $up,
+        ];
+    }
+
+    ksort($migrations, SORT_NUMERIC);
+
+    return $migrations;
 }
 
 function mapRunDatabaseMigrations(PDO $pdo): void
 {
-    if (!mapTableHasColumn($pdo, 'campaigns', 'is_archived')) {
-        $pdo->exec('ALTER TABLE campaigns ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0');
+    mapEnsureMigrationTable($pdo);
+    $migrations = mapLoadDatabaseMigrations();
+    $appliedMigrations = [];
+
+    foreach ($pdo->query('SELECT version, name FROM schema_migrations ORDER BY version ASC') as $row) {
+        $appliedMigrations[(int) $row['version']] = (string) $row['name'];
     }
 
-    if (!mapTableHasColumn($pdo, 'campaign_members', 'updated_at')) {
-        $pdo->exec('ALTER TABLE campaign_members ADD COLUMN updated_at TEXT DEFAULT NULL');
-        $pdo->exec('UPDATE campaign_members SET updated_at = created_at WHERE updated_at IS NULL');
+    foreach ($appliedMigrations as $version => $name) {
+        if (!isset($migrations[$version])) {
+            throw new RuntimeException('La base utilise une migration inconnue du code : ' . $version);
+        }
+
+        if ($migrations[$version]['name'] !== $name) {
+            throw new RuntimeException('Le nom de la migration ' . $version . ' ne correspond pas a la base.');
+        }
     }
 
-    if (!mapTableHasColumn($pdo, 'campaigns', 'updated_at')) {
-        $pdo->exec('ALTER TABLE campaigns ADD COLUMN updated_at TEXT DEFAULT NULL');
-        $pdo->exec('UPDATE campaigns SET updated_at = created_at WHERE updated_at IS NULL');
+    foreach ($migrations as $version => $migration) {
+        if (isset($appliedMigrations[$version])) {
+            continue;
+        }
+
+        try {
+            $pdo->beginTransaction();
+
+            // Une autre requete peut avoir termine cette migration pendant
+            // notre attente du verrou SQLite.
+            $alreadyAppliedName = mapAppliedMigrationName($pdo, $version);
+            if ($alreadyAppliedName !== null) {
+                if ($alreadyAppliedName !== $migration['name']) {
+                    throw new RuntimeException('Le nom de la migration ' . $version . ' ne correspond pas a la base.');
+                }
+
+                $pdo->commit();
+                continue;
+            }
+
+            $migration['up']($pdo);
+
+            $statement = $pdo->prepare(
+                'INSERT INTO schema_migrations (version, name, applied_at)
+                 VALUES (:version, :name, CURRENT_TIMESTAMP)'
+            );
+            $statement->execute([
+                ':version' => $version,
+                ':name' => $migration['name'],
+            ]);
+            $pdo->commit();
+        } catch (Throwable $exception) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+
+            // Deux premiers appels concurrents peuvent lire le meme historique
+            // avant que l un des deux n enregistre la version. Si l autre appel
+            // l a correctement appliquee, la base est deja dans l etat attendu.
+            if (mapAppliedMigrationName($pdo, $version) === $migration['name']) {
+                continue;
+            }
+
+            throw new RuntimeException(
+                'Echec de la migration SQLite ' . $version . ' (' . $migration['name'] . ').',
+                0,
+                $exception
+            );
+        }
     }
 }
 
-function mapEnsureIndexes(PDO $pdo): void
+function mapAppliedMigrationName(PDO $pdo, int $version): ?string
 {
-    $statements = [
-        'CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)',
-        'CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active)',
-        'CREATE INDEX IF NOT EXISTS idx_users_role_active ON users(role, is_active)',
-        'CREATE INDEX IF NOT EXISTS idx_campaigns_owner_user_id ON campaigns(owner_user_id)',
-        'CREATE INDEX IF NOT EXISTS idx_campaigns_is_archived ON campaigns(is_archived)',
-        'CREATE INDEX IF NOT EXISTS idx_campaign_members_campaign_id ON campaign_members(campaign_id)',
-        'CREATE INDEX IF NOT EXISTS idx_campaign_members_user_id ON campaign_members(user_id)',
-        'CREATE INDEX IF NOT EXISTS idx_campaign_members_member_role ON campaign_members(member_role)',
-    ];
+    $statement = $pdo->prepare('SELECT name FROM schema_migrations WHERE version = :version LIMIT 1');
+    $statement->execute([':version' => $version]);
+    $name = $statement->fetchColumn();
 
-    foreach ($statements as $statement) {
-        $pdo->exec($statement);
-    }
+    return is_string($name) ? $name : null;
+}
+
+function mapCurrentDatabaseVersion(PDO $pdo): int
+{
+    mapEnsureMigrationTable($pdo);
+
+    return (int) $pdo->query('SELECT COALESCE(MAX(version), 0) FROM schema_migrations')->fetchColumn();
 }
 
 function mapTableHasColumn(PDO $pdo, string $table, string $column): bool
 {
+    if (!preg_match('/^[a-z_][a-z0-9_]*$/i', $table)) {
+        throw new InvalidArgumentException('Nom de table SQLite invalide.');
+    }
+
     $statement = $pdo->query('PRAGMA table_info(' . $table . ')');
     $columns = $statement->fetchAll();
 

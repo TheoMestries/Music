@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const MAP_APP_NAME = 'Atlas JDR';
+const MAP_APP_NAME = 'Sus20';
 const MAP_SESSION_NAME = 'jdr_map_session';
 const MAP_CSRF_SESSION_KEY = 'map_csrf_token';
 const MAP_FLASH_SESSION_KEY = 'map_flash_messages';

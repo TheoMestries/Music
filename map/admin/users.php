@@ -15,7 +15,7 @@ try {
         <div>
           <p class="eyebrow">Administration</p>
           <h2>Utilisateurs</h2>
-          <p class="muted">Gestion des comptes globaux de l outil de cartes.</p>
+          <p class="muted">Gestion des comptes Sus20.</p>
         </div>
         <div class="button-row">
           <a class="button" href="<?= mapEscape(mapUrl('/admin/user-create.php')) ?>">Creer un utilisateur</a>

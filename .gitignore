@@ -1,0 +1,13 @@
+# Donnees d'execution du module JDR. Seuls les fichiers de protection et le
+# placeholder du dossier restent versionnes.
+/map/data/*
+!/map/data/.gitkeep
+!/map/data/.htaccess
+
+# Fichiers temporaires crees par SQLite selon son mode de journalisation.
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+
+# Identifiants de l'ancienne application musicale (stockage d'execution).
+/data/users.json

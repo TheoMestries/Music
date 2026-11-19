@@ -31,6 +31,7 @@ requireLogin();
               </button>
               <a class="secondary-button broadcast-link" href="diffusion" target="_blank" rel="noopener">Lien diffusion</a>
             </div>
+            <a class="secondary-button" href="map/">Sus20</a>
             <button id="theme-toggle" type="button" class="secondary-button">Mode sombre</button>
             <button id="campaign-switch" type="button" class="secondary-button">Changer de campagne</button>
             <a class="secondary-button logout-button" href="logout.php">Déconnexion</a>

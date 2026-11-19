@@ -1,5 +1,17 @@
 # Roadmap du module map
 
+0. Espace de campagne et notes (termine)
+   - notes personnelles, MJ et partagees
+   - dossiers et tags
+   - recherche, filtres et sauvegarde automatique
+   - controle de revision contre les ecrasements concurrents
+
+0.1. Moteur de des (termine)
+   - expressions composees et conservation `kh` / `kl`
+   - avantage et desavantage
+   - fournisseur ANU configurable avec secours cryptographique
+   - historique serveur partage par campagne
+
 1. Upload et affichage des cartes
    - stockage des images de carte
    - validation des formats
@@ -35,9 +47,8 @@
    - outils temporaires
    - mesures de distance
 
-8. Initiative, des et chat
+8. Initiative et chat
    - ordre d initiative
-   - lancers de des
    - chat de table
 
 9. Securite, tests et finition

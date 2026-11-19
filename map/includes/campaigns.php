@@ -14,9 +14,36 @@ function mapCampaignAccessLabel(string $role): string
     };
 }
 
+function mapPublicCampaignData(array $campaign, ?array $access = null): array
+{
+    $accessRole = (string) ($access['current_user_role'] ?? $campaign['current_user_role'] ?? '');
+
+    return [
+        'id' => (int) $campaign['id'],
+        'name' => (string) $campaign['name'],
+        'description' => $campaign['description'] !== null ? (string) $campaign['description'] : null,
+        'isArchived' => (int) $campaign['is_archived'] === 1,
+        'createdAt' => (string) $campaign['created_at'],
+        'updatedAt' => (string) $campaign['updated_at'],
+        'memberCount' => (int) $campaign['member_count'],
+        'owner' => [
+            'id' => (int) $campaign['owner_user_id'],
+            'username' => (string) $campaign['owner_username'],
+            'displayName' => (string) $campaign['owner_display_name'],
+            'isActive' => (int) $campaign['owner_is_active'] === 1,
+        ],
+        'access' => [
+            'role' => $accessRole,
+            'canManageCampaign' => (bool) ($access['can_manage_campaign'] ?? in_array($accessRole, ['admin', 'owner'], true)),
+            'canManageMembers' => (bool) ($access['can_manage_members'] ?? in_array($accessRole, ['admin', 'owner'], true)),
+            'canViewMembers' => (bool) ($access['can_view_members'] ?? true),
+        ],
+    ];
+}
+
 function mapCanCreateCampaign(array $user): bool
 {
-    return mapHasGlobalRole($user, ['admin', 'gm']);
+    return mapHasGlobalRole($user, ['admin', 'gm', 'player']);
 }
 
 function mapListCampaignOwnerOptions(array $currentUser): array
@@ -31,6 +58,9 @@ function mapGetCampaignById(int $campaignId): ?array
         'SELECT c.id,
                 c.name,
                 c.description,
+                c.cover_image <> \'\' AS has_cover,
+                c.default_sheet_template_id,
+                COALESCE(creator.display_name,owner.display_name) AS creator_display_name,
                 c.owner_user_id,
                 c.is_archived,
                 c.created_at,
@@ -47,6 +77,7 @@ function mapGetCampaignById(int $campaignId): ?array
          FROM campaigns AS c
          INNER JOIN users AS owner
              ON owner.id = c.owner_user_id
+         LEFT JOIN users AS creator ON creator.id=c.creator_user_id
          WHERE c.id = :campaign_id
          LIMIT 1'
     );
@@ -183,7 +214,7 @@ function mapResolveCampaignTransferOwnerId(int $requestedOwnerId): int
 
 function mapResolveCampaignOwnerIdForCreate(array $currentUser, int $requestedOwnerId): int
 {
-    if ((string) $currentUser['role'] === 'gm') {
+    if ((string) $currentUser['role'] !== 'admin') {
         return (int) $currentUser['user_id'];
     }
 
@@ -206,13 +237,14 @@ function mapCreateCampaign(
     $ownerUserId = mapResolveCampaignOwnerIdForCreate($currentUser, $requestedOwnerId);
 
     $statement = $pdo->prepare(
-        'INSERT INTO campaigns (name, description, owner_user_id, is_archived, created_at, updated_at)
-         VALUES (:name, :description, :owner_user_id, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
+        'INSERT INTO campaigns (name, description, owner_user_id, creator_user_id, is_archived, created_at, updated_at)
+         VALUES (:name, :description, :owner_user_id, :creator_user_id, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
     );
     $statement->execute([
         ':name' => $name,
         ':description' => $description,
         ':owner_user_id' => $ownerUserId,
+        ':creator_user_id' => (int)$currentUser['user_id'],
     ]);
 
     return (int) $pdo->lastInsertId();
@@ -226,6 +258,7 @@ function mapListCampaignsForUser(array $currentUser): array
         'SELECT c.id,
                 c.name,
                 c.description,
+                c.cover_image <> \'\' AS has_cover,
                 c.owner_user_id,
                 c.is_archived,
                 c.created_at,
@@ -235,7 +268,7 @@ function mapListCampaignsForUser(array $currentUser): array
                 owner.role AS owner_role,
                 owner.is_active AS owner_is_active,
                 CASE
-                    WHEN :is_admin = 1 THEN "admin"
+                    WHEN CAST(:is_admin AS INTEGER) = 1 THEN "admin"
                     WHEN c.owner_user_id = :user_id THEN "owner"
                     ELSE cm_self.member_role
                 END AS current_user_role,
@@ -250,7 +283,7 @@ function mapListCampaignsForUser(array $currentUser): array
          LEFT JOIN campaign_members AS cm_self
              ON cm_self.campaign_id = c.id
             AND cm_self.user_id = :user_id
-         WHERE :is_admin = 1
+         WHERE CAST(:is_admin AS INTEGER) = 1
             OR c.owner_user_id = :user_id
             OR cm_self.user_id IS NOT NULL
          ORDER BY c.is_archived ASC, datetime(c.updated_at) DESC, LOWER(c.name) ASC'
@@ -275,14 +308,16 @@ function mapUpdateCampaignDetails(
     string $name,
     ?string $description,
     int $requestedOwnerId,
-    array $currentUser
+    array $currentUser,
+    ?string $cover = null
 ): void {
     $access = mapRequireCampaignOwnerOrAdmin($campaignId, $currentUser);
     $campaign = $access['campaign'];
     $pdo = mapGetDatabase();
     $name = mapValidateCampaignName($name);
     $description = mapValidateCampaignDescription($description);
-    $ownerUserId = mapResolveCampaignTransferOwnerId($requestedOwnerId);
+    $ownerUserId = $requestedOwnerId === (int)$campaign['owner_user_id']
+        ? $requestedOwnerId : mapResolveCampaignTransferOwnerId($requestedOwnerId);
 
     try {
         $pdo->beginTransaction();
@@ -291,6 +326,7 @@ function mapUpdateCampaignDetails(
             'UPDATE campaigns
              SET name = :name,
                  description = :description,
+                 cover_image = COALESCE(:cover_image, cover_image),
                  owner_user_id = :owner_user_id,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = :campaign_id'
@@ -298,6 +334,7 @@ function mapUpdateCampaignDetails(
         $statement->execute([
             ':name' => $name,
             ':description' => $description,
+            ':cover_image' => $cover,
             ':owner_user_id' => $ownerUserId,
             ':campaign_id' => $campaignId,
         ]);
