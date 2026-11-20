@@ -16,8 +16,9 @@ L API de lecture des campagnes JDR est disponible dans
 
 ## Comptes et diffusion SuSZic
 
-L’inscription, la connexion et la déconnexion sont partagées avec Sus20. Le
-lien « SuSZic » dans le menu de Sus20 ouvre la bibliothèque du compte connecté.
+La page d’accueil ouvre Sus20. L’inscription, la connexion et la déconnexion
+sont partagées avec SuSZic. Le lien « SuSZic » dans le menu de Sus20 ouvre la
+bibliothèque du compte connecté.
 Chaque compte gère ses projets depuis « Changer de projet audio ».
 « Transférer » déplace un projet complet vers un compte Sus20 actif.
 
@@ -32,6 +33,14 @@ leur session Sus20.
 Conservez `data/users.json`, `data/music-projects.json`, `map/data/map.sqlite`
 et les fichiers téléversés lors de la mise à jour. L’ancien fichier des comptes
 sert à vérifier les demandes de récupération.
+
+### Mise à jour depuis une version qui suivait les données SuSZic dans Git
+
+Sauvegardez `data/campaigns.json` s’il existe et `uploads/audio/` hors du
+dépôt avant le pull. Git peut retirer de cette copie de travail les fichiers
+qui étaient précédemment suivis. Après le pull, remettez depuis la sauvegarde
+les fichiers manquants aux mêmes emplacements. Les fichiers de protection
+`.htaccess` restent suivis.
 
 « Ma salle » ouvre le lien d’écoute propre au compte. Les auditeurs peuvent
 l’utiliser sans compte. Chaque diffuseur peut activer son direct depuis un

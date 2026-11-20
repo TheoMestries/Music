@@ -32,6 +32,11 @@ function mapSiteUrl(): string
     return substr(mapBasePath(), 0, -strlen('/map')) . '/';
 }
 
+function mapMusicUrl(): string
+{
+    return mapSiteUrl() . 'suszic.php';
+}
+
 function mapNormalizeUrlPath(string $path): string
 {
     $trimmed = trim(str_replace('\\', '/', $path), '/');

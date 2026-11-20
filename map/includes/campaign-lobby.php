@@ -20,7 +20,7 @@ function mapFinishAccountEntry(?string $invite): never
 {
     if ($invite !== null) mapRedirectWithQuery('/campaign-join.php', ['invite'=>$invite]);
     if (mapAccountEntryQuery(null) !== []) {
-        header('Location: ' . mapSiteUrl());
+        header('Location: ' . mapMusicUrl());
         exit;
     }
     mapRedirect('/index.php');

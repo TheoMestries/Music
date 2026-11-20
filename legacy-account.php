@@ -14,7 +14,7 @@ if (mapIsPostRequest()) {
         $username = is_string($_POST['username'] ?? null) ? trim($_POST['username']) : '';
         $password = is_string($_POST['password'] ?? null) ? $_POST['password'] : '';
         musicClaimLegacyAccount($user['user_id'], $username, $password);
-        header('Location: ' . mapSiteUrl());
+        header('Location: ' . mapMusicUrl());
         exit;
     } catch (DomainException $exception) {
         $error = $exception->getMessage();
@@ -48,7 +48,7 @@ if (mapIsPostRequest()) {
           <input id="password" name="password" type="password" autocomplete="current-password" required>
           <button class="secondary-button" type="submit">Récupérer mes projets</button>
         </form>
-        <p><a href="<?= mapEscape(mapSiteUrl()) ?>">Retour à SuSZic</a></p>
+        <p><a href="<?= mapEscape(mapMusicUrl()) ?>">Retour à SuSZic</a></p>
       </section>
     </main>
     <script src="theme.js?v=1"></script>
