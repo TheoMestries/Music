@@ -1,3 +1,6 @@
+# Configuration locale de l’IDE.
+/.idea/
+
 # Donnees d'execution du module JDR. Seuls les fichiers de protection et le
 # placeholder du dossier restent versionnes.
 /map/data/*
@@ -9,11 +12,9 @@
 *.sqlite-shm
 *.sqlite-wal
 
-# Comptes, stockage d'execution et nouveaux fichiers audio et images de SuSZic.
-/data/users.json
-/data/*.lock
-/data/music-*
-/data/broadcast.json
+# Comptes, bibliothèques, sauvegardes et fichiers téléversés de SuSZic.
+/data/*
+!/data/.htaccess
 /uploads/audio/*
 !/uploads/audio/.gitkeep
 !/uploads/audio/.htaccess
