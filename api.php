@@ -44,15 +44,15 @@ try {
                 throw new DomainException('Projet audio introuvable.', 404);
             }
             if ($action === 'transferCampaign') {
-                $recipient = is_string($payload['username'] ?? null) ? findMusicUser(trim($payload['username']), true) : null;
-                if ($recipient === null || $recipient['username'] === $owner) {
-                    throw new DomainException('Indiquez l’identifiant d’un autre compte SuSZic.');
+                $recipient = is_string($payload['username'] ?? null) ? mapFindUserByUsername(trim($payload['username'])) : null;
+                if ($recipient === null || (int) $recipient['is_active'] !== 1 || (int) $recipient['id'] === $owner) {
+                    throw new DomainException('Indiquez l’identifiant d’un autre compte Sus20 actif.');
                 }
             }
             foreach ($library['projects'] as $index => $project) {
                 if ($project['owner'] === $owner && $project['campaign']['id'] === $id) {
                     if ($action === 'transferCampaign') {
-                        $project['owner'] = $recipient['username'];
+                        $project['owner'] = (int) $recipient['id'];
                         array_splice($library['projects'], $index, 1);
                         array_unshift($library['projects'], $project);
                     } else {
@@ -73,7 +73,7 @@ try {
     fail('Impossible d’accéder à la bibliothèque musicale.', 500);
 }
 
-function saveMusicCampaigns(array &$library, string $owner, array $current, mixed $campaigns): void
+function saveMusicCampaigns(array &$library, int $owner, array $current, mixed $campaigns): void
 {
     if (!is_array($campaigns) || !array_is_list($campaigns)) {
         throw new DomainException('Liste des projets audio invalide.');
@@ -108,7 +108,7 @@ function saveMusicCampaigns(array &$library, string $owner, array $current, mixe
     $library['projects'] = array_merge($otherProjects, $ownedProjects);
 }
 
-function uploadMusicMedia(string $owner, string $kind, array $file): array
+function uploadMusicMedia(int $owner, string $kind, array $file): array
 {
     if (($file['error'] ?? null) !== UPLOAD_ERR_OK) {
         throw new DomainException('Fichier manquant ou trop volumineux.');

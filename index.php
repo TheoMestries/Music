@@ -1,10 +1,11 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/auth.php';
-$username = requireLogin();
-$room = musicRoomForUser($username);
-$csrf = csrfToken();
+require_once __DIR__ . '/campaigns.php';
+$user = requireLogin();
+$room = musicRoomForUser($user['user_id']);
+$csrf = mapGetCsrfToken();
+$showLegacyAccountLink = musicHasLegacyAccountsToClaim();
 header('Cache-Control: no-store');
 ?>
 <!doctype html>
@@ -37,12 +38,12 @@ header('Cache-Control: no-store');
               <button id="broadcast-copy" type="button" class="secondary-button">Copier le lien</button>
               <span id="broadcast-copy-status" role="status"></span>
             </div>
-            <a class="secondary-button" href="map/">Sus20</a>
+            <a class="secondary-button" href="<?= mapEscape(mapUrl()) ?>">Sus20</a>
             <button id="theme-toggle" type="button" class="secondary-button">Mode sombre</button>
             <button id="campaign-switch" type="button" class="secondary-button">Changer de projet audio</button>
-            <form method="post" action="logout.php">
-              <input type="hidden" name="csrf" value="<?= $csrf ?>">
-              <button type="submit" class="secondary-button logout-button" title="<?= htmlspecialchars($username, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">Déconnexion</button>
+            <form method="post" action="<?= mapEscape(mapUrl('/logout.php')) ?>">
+              <?= mapCsrfField() ?>
+              <button type="submit" class="secondary-button logout-button" title="<?= mapEscape($user['username']) ?>">Déconnexion</button>
             </form>
           </div>
         </header>
@@ -102,6 +103,9 @@ header('Cache-Control: no-store');
           <strong id="campaign-count">0</strong>
         </div>
         <div id="campaign-list" class="campaign-list"></div>
+        <?php if ($showLegacyAccountLink): ?>
+          <a class="secondary-button" href="legacy-account.php">Récupérer mes anciens projets SuSZic</a>
+        <?php endif; ?>
       </div>
     </div>
 
@@ -193,7 +197,7 @@ header('Cache-Control: no-store');
         </div>
         <form id="transfer-form" class="panel-form">
           <p id="transfer-summary"></p>
-          <label for="transfer-username">Identifiant du compte destinataire</label>
+          <label for="transfer-username">Identifiant Sus20 du compte destinataire</label>
           <input id="transfer-username" type="text" autocomplete="off" required>
           <button type="submit" class="secondary-button">Confirmer le transfert</button>
         </form>

@@ -88,6 +88,7 @@ function mapRenderAppHeader(array $currentUser, string $activeNav = 'home'): voi
 
         <nav class="app-nav" aria-label="Navigation principale">
           <a class="<?= mapEscape(mapNavClass('campaigns', $activeNav)) ?>" href="<?= mapEscape(mapUrl('/index.php')) ?>">Mes parties</a>
+          <a class="nav-link" href="<?= mapEscape(mapSiteUrl()) ?>">SuSZic</a>
           <?php if ((string) $currentUser['role'] === 'admin'): ?>
             <a class="<?= mapEscape(mapNavClass('users', $activeNav)) ?>" href="<?= mapEscape(mapUrl('/admin/users.php')) ?>">Utilisateurs</a>
             <a class="<?= mapEscape(mapNavClass('dice-settings', $activeNav)) ?>" href="<?= mapEscape(mapUrl('/admin/dice-settings.php')) ?>">Reglages des</a>

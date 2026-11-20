@@ -10,11 +10,10 @@ if ($fileName === null) {
 }
 
 if (isset($_GET['room'])) {
-    $room = $_GET['room'];
-    $owner = musicRoomOwner($room);
-    $allowed = $owner !== null && in_array($fileName, array_column(musicPublicBroadcast($room, $owner)['tracks'], 'file'), true);
+    $room = musicResolveRoom($_GET['room']);
+    $allowed = $room !== null && in_array($fileName, array_column(musicPublicBroadcast($room['room'], $room['owner'])['tracks'], 'file'), true);
 } else {
-    $owner = requireLogin();
+    $owner = requireLogin()['user_id'];
     session_write_close();
     $campaigns = musicOwnedCampaigns(musicReadJson(MUSIC_PROJECT_FILE), $owner);
     $allowed = isset(musicMediaList($campaigns)['audio'][$fileName]);

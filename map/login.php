@@ -84,9 +84,9 @@ try {
         </form>
 
         <?php if ($hasUsers): ?>
-          <p class="helper-text">Nouveau sur <?= mapEscape(MAP_APP_NAME) ?> ? <a href="<?= mapEscape(mapUrlWithQuery('/register.php', $invite === null ? [] : ['invite'=>$invite])) ?>">Créer un compte</a></p>
+          <p class="helper-text">Nouveau sur <?= mapEscape(MAP_APP_NAME) ?> ? <a href="<?= mapEscape(mapUrlWithQuery('/register.php', mapAccountEntryQuery($invite))) ?>">Créer un compte</a></p>
         <?php else: ?>
-          <p class="helper-text">Aucun compte configure. <a href="./setup.php">Creer le premier administrateur</a>.</p>
+          <p class="helper-text">Aucun compte configure. <a href="<?= mapEscape(mapUrlWithQuery('/setup.php', mapAccountEntryQuery($invite))) ?>">Creer le premier administrateur</a>.</p>
         <?php endif; ?>
       </section>
     </main>

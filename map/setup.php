@@ -1,9 +1,10 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/campaign-lobby.php';
 
 $error = '';
+$entryQuery = mapAccountEntryQuery(mapInvitationToken($_GET['invite'] ?? null));
 $formData = [
     'username' => '',
     'display_name' => '',
@@ -11,7 +12,7 @@ $formData = [
 
 try {
     if (mapUsersExist()) {
-        mapRedirectWithQuery('/login.php', ['setup' => 'locked']);
+        mapRedirectWithQuery('/login.php', ['setup' => 'locked'] + $entryQuery);
     }
 
     if (mapIsPostRequest()) {
@@ -27,7 +28,7 @@ try {
         $validatedPassword = mapValidateInitialPassword($password, $passwordConfirmation);
 
         mapCreateInitialAdministrator($username, $displayName, $validatedPassword);
-        mapRedirectWithQuery('/login.php', ['setup' => 'complete']);
+        mapRedirectWithQuery('/login.php', ['setup' => 'complete'] + $entryQuery);
     }
 } catch (DomainException $exception) {
     $error = $exception->getMessage();
@@ -81,7 +82,7 @@ try {
           <button type="submit" class="button">Creer l administrateur</button>
         </form>
 
-        <p class="helper-text"><a href="./login.php">Retour a la connexion</a></p>
+        <p class="helper-text"><a href="<?= mapEscape(mapUrlWithQuery('/login.php', $entryQuery)) ?>">Retour a la connexion</a></p>
       </section>
     </main>
   </body>

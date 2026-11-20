@@ -1,24 +1,17 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/auth.php';
-
-const MUSIC_PROJECT_FILE = MUSIC_DATA_DIR . '/music-projects.json';
+require_once __DIR__ . '/music-accounts.php';
 
 function musicCampaignTransaction(callable $update): mixed
 {
     return musicUpdateJson(MUSIC_PROJECT_FILE, static function (array &$library) use ($update): mixed {
-        if (!($library['legacyImported'] ?? false) && ($owner = legacyMusicOwner()) !== null) {
-            foreach (musicReadJson(MUSIC_DATA_DIR . '/campaigns.json') as $campaign) {
-                $library['projects'][] = ['owner' => $owner, 'campaign' => $campaign];
-            }
-            $library['legacyImported'] = true;
-        }
+        musicMigrateLegacyAdmin($library);
         return $update($library);
     }, 'musicRemoveUnusedMedia');
 }
 
-function musicOwnedCampaigns(array $library, string $owner): array
+function musicOwnedCampaigns(array $library, int $owner): array
 {
     return array_values(array_map(
         static fn(array $project): array => $project['campaign'],
@@ -34,7 +27,7 @@ function musicCampaignResponse(array $campaigns): array
     ];
 }
 
-function musicFindCampaign(array $library, string $owner, mixed $id): ?array
+function musicFindCampaign(array $library, int $owner, mixed $id): ?array
 {
     foreach ($library['projects'] ?? [] as $project) {
         if ($project['owner'] === $owner && $project['campaign']['id'] === $id) {

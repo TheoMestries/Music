@@ -8,7 +8,7 @@ $username = $displayName = '';
 $error = null;
 try {
     if (mapGetCurrentUser() !== null) mapFinishAccountEntry($invite);
-    if (!mapUsersExist()) mapRedirect('/setup.php');
+    if (!mapUsersExist()) mapRedirectWithQuery('/setup.php', mapAccountEntryQuery($invite));
     if (mapIsPostRequest()) {
         mapEnforceCsrfToken();
         $username = trim((string)($_POST['username'] ?? ''));
@@ -47,7 +47,7 @@ try {
       <div class="field-group"><label for="confirmation">Confirmer le mot de passe</label><input id="confirmation" name="confirmation" type="password" autocomplete="new-password" required></div>
       <button class="button" type="submit">Créer mon compte</button>
     </form>
-    <p class="helper-text">Déjà un compte ? <a href="<?= mapEscape(mapUrlWithQuery('/login.php',$invite === null ? [] : ['invite'=>$invite])) ?>">Se connecter</a></p>
+    <p class="helper-text">Déjà un compte ? <a href="<?= mapEscape(mapUrlWithQuery('/login.php', mapAccountEntryQuery($invite))) ?>">Se connecter</a></p>
   </section>
 </main>
 </body>

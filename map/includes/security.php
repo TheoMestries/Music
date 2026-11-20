@@ -9,18 +9,27 @@ const MAP_FLASH_SESSION_KEY = 'map_flash_messages';
 function mapBasePath(): string
 {
     $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
-    $marker = '/map/';
-    $position = strpos($scriptName, $marker);
+    if (defined('MAP_SITE_ROOT_SCRIPT') && MAP_SITE_ROOT_SCRIPT) {
+        $directory = $scriptName === '' ? '/' : dirname($scriptName);
+        return rtrim(mapNormalizeUrlPath($directory), '/') . '/map';
+    }
+
+    $position = strrpos($scriptName, '/map/');
 
     if ($position !== false) {
         return mapNormalizeUrlPath(substr($scriptName, 0, $position + 4));
     }
 
     if ($scriptName !== '' && str_ends_with($scriptName, '/map')) {
-        return '/map';
+        return mapNormalizeUrlPath($scriptName);
     }
 
     return '/map';
+}
+
+function mapSiteUrl(): string
+{
+    return substr(mapBasePath(), 0, -strlen('/map')) . '/';
 }
 
 function mapNormalizeUrlPath(string $path): string
@@ -107,7 +116,7 @@ function mapStartSession(): void
     session_name(MAP_SESSION_NAME);
     session_set_cookie_params([
         'lifetime' => 0,
-        'path' => rtrim(mapBasePath(), '/') . '/',
+        'path' => mapSiteUrl(),
         'domain' => '',
         'secure' => mapIsHttpsRequest(),
         'httponly' => true,
@@ -115,6 +124,27 @@ function mapStartSession(): void
     ]);
 
     session_start();
+
+    // Promote existing sessions whose cookie was scoped to /map.
+    if (!defined('MAP_SITE_ROOT_SCRIPT') && !isset($_SESSION['map_shared_cookie'])) {
+        $incoming = $_COOKIE[MAP_SESSION_NAME] ?? null;
+        if (ini_get('session.use_cookies') && $incoming === session_id()) {
+            mapSetSessionCookie(session_id(), mapSiteUrl());
+            mapSetSessionCookie('', mapUrl(), time() - 42000);
+        }
+        $_SESSION['map_shared_cookie'] = true;
+    }
+}
+
+function mapSetSessionCookie(string $value, string $path, int $expires = 0): void
+{
+    setcookie(MAP_SESSION_NAME, $value, [
+        'expires' => $expires,
+        'path' => $path,
+        'secure' => mapIsHttpsRequest(),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
 }
 
 function mapGenerateCsrfToken(): string

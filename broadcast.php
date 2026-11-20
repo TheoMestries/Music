@@ -9,12 +9,11 @@ header('Cache-Control: no-store');
 try {
     $action = $_GET['action'] ?? 'state';
     if ($action === 'state') {
-        $room = $_GET['room'] ?? null;
-        $owner = musicRoomOwner($room);
-        if ($owner === null) {
+        $room = musicResolveRoom($_GET['room'] ?? null);
+        if ($room === null) {
             throw new DomainException('Salle de diffusion introuvable.', 404);
         }
-        echo json_encode(musicPublicBroadcast($room, $owner), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        echo json_encode(musicPublicBroadcast($room['room'], $room['owner']), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         exit;
     }
 

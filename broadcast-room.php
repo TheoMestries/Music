@@ -8,7 +8,7 @@ function musicBroadcastPath(string $room): string
     return MUSIC_DATA_DIR . '/music-room-' . $room . '.json';
 }
 
-function musicPublicBroadcast(string $room, string $owner): array
+function musicPublicBroadcast(string $room, int $owner): array
 {
     $state = musicReadJson(musicBroadcastPath($room));
     if (($state['updatedAt'] ?? 0) < time() - 30) {

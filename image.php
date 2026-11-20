@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/campaigns.php';
 
-$owner = requireLogin();
+$owner = requireLogin()['user_id'];
 session_write_close();
 $name = musicFileName($_GET['file'] ?? null);
 $campaigns = musicOwnedCampaigns(musicReadJson(MUSIC_PROJECT_FILE), $owner);

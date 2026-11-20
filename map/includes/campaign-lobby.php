@@ -8,9 +8,21 @@ function mapInvitationToken(mixed $value): ?string
     return is_string($value) && preg_match('/\A[a-f0-9]{48}\z/', $value) ? $value : null;
 }
 
+function mapAccountEntryQuery(?string $invite): array
+{
+    if ($invite !== null) {
+        return ['invite' => $invite];
+    }
+    return ($_GET['next'] ?? null) === 'suszic' ? ['next' => 'suszic'] : [];
+}
+
 function mapFinishAccountEntry(?string $invite): never
 {
     if ($invite !== null) mapRedirectWithQuery('/campaign-join.php', ['invite'=>$invite]);
+    if (mapAccountEntryQuery(null) !== []) {
+        header('Location: ' . mapSiteUrl());
+        exit;
+    }
     mapRedirect('/index.php');
 }
 

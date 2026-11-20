@@ -3,8 +3,7 @@
 Le depot contient deux interfaces qui partagent le meme hebergement, mais pas
 le meme stockage metier :
 
-- la racine gère les comptes SuSZic et leurs projets audio dans
-  `data/users.json` et `data/music-projects.json` ;
+- la racine gère les projets audio dans `data/music-projects.json` ;
 - `/map/` gere les campagnes JDR canoniques, leurs utilisateurs et leurs droits
   dans `map/data/map.sqlite`.
 
@@ -17,18 +16,22 @@ L API de lecture des campagnes JDR est disponible dans
 
 ## Comptes et diffusion SuSZic
 
-L’inscription SuSZic est accessible depuis la page de connexion. Chaque compte
-gère ses projets depuis « Changer de projet audio ». « Transférer » déplace
-un projet, ses dossiers, ses playlists, ses images et ses musiques vers un
-compte SuSZic existant, identifié par son identifiant de connexion.
+L’inscription, la connexion et la déconnexion sont partagées avec Sus20. Le
+lien « SuSZic » dans le menu de Sus20 ouvre la bibliothèque du compte connecté.
+Chaque compte gère ses projets depuis « Changer de projet audio ».
+« Transférer » déplace un projet complet vers un compte Sus20 actif.
 
-Au premier chargement de la bibliothèque, SuSZic importe une fois les projets
-de `data/campaigns.json` dans le compte historique. Il cherche d’abord un compte
-marqué `"role": "admin"`, puis un ancien compte nommé `admin`, puis le premier
-compte historique sans champ `role`. Conservez
-`data/users.json` et les fichiers téléversés lors de la mise à jour. Sauvegardez
-aussi `data/music-projects.json` après l’import pour conserver les transferts et
-les suppressions.
+Au premier chargement, la bibliothèque de l’ancien administrateur est rattachée
+à l’administrateur Sus20 du même identifiant, ou au premier administrateur
+Sus20 actif. Cette opération importe aussi `data/campaigns.json` si l’import
+historique n’a jamais été effectué. Les autres anciens comptes peuvent
+récupérer leurs projets et leur lien de diffusion depuis « Récupérer mes
+anciens projets SuSZic », en saisissant leurs anciens identifiants depuis
+leur session Sus20.
+
+Conservez `data/users.json`, `data/music-projects.json`, `map/data/map.sqlite`
+et les fichiers téléversés lors de la mise à jour. L’ancien fichier des comptes
+sert à vérifier les demandes de récupération.
 
 « Ma salle » ouvre le lien d’écoute propre au compte. Les auditeurs peuvent
 l’utiliser sans compte. Chaque diffuseur peut activer son direct depuis un
