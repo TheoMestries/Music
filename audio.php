@@ -1,26 +1,30 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/broadcast-room.php';
 
-$fileName = basename((string) ($_GET['file'] ?? ''));
-if ($fileName === '' || !preg_match('/^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$/', $fileName)) {
+$fileName = musicFileName($_GET['file'] ?? null);
+if ($fileName === null) {
     http_response_code(404);
     exit;
 }
 
-$isBroadcastRequest = ($_GET['broadcast'] ?? '') === '1';
-if ($isBroadcastRequest) {
-    if (!isBroadcastFileAllowed($fileName)) {
-        http_response_code(404);
-        exit;
-    }
+if (isset($_GET['room'])) {
+    $room = $_GET['room'];
+    $owner = musicRoomOwner($room);
+    $allowed = $owner !== null && in_array($fileName, array_column(musicPublicBroadcast($room, $owner)['tracks'], 'file'), true);
 } else {
-    requireLogin();
+    $owner = requireLogin();
+    session_write_close();
+    $campaigns = musicOwnedCampaigns(musicReadJson(MUSIC_PROJECT_FILE), $owner);
+    $allowed = isset(musicMediaList($campaigns)['audio'][$fileName]);
 }
-session_write_close();
+if (!$allowed) {
+    http_response_code(404);
+    exit;
+}
 
-$path = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'audio' . DIRECTORY_SEPARATOR . $fileName;
+$path = musicMediaPath('audio', $fileName);
 if (!is_file($path)) {
     http_response_code(404);
     exit;
@@ -31,10 +35,18 @@ $mimeTypes = [
     'mp3' => 'audio/mpeg',
     'wav' => 'audio/wav',
     'ogg' => 'audio/ogg',
+    'oga' => 'audio/ogg',
+    'opus' => 'audio/ogg',
     'm4a' => 'audio/mp4',
+    'mp4' => 'audio/mp4',
     'aac' => 'audio/aac',
     'flac' => 'audio/flac',
     'webm' => 'audio/webm',
+    'aif' => 'audio/aiff',
+    'aiff' => 'audio/aiff',
+    'wma' => 'audio/x-ms-wma',
+    'mid' => 'audio/midi',
+    'midi' => 'audio/midi',
 ];
 $mimeType = $mimeTypes[$extension] ?? 'application/octet-stream';
 $fileSize = filesize($path);
@@ -67,7 +79,8 @@ header('Content-Type: ' . $mimeType);
 header('Content-Length: ' . $length);
 header('Accept-Ranges: bytes');
 header('Content-Disposition: inline; filename="' . $fileName . '"');
-header('Cache-Control: private, max-age=3600');
+header('Cache-Control: private, no-store');
+header('X-Content-Type-Options: nosniff');
 
 $handle = fopen($path, 'rb');
 if ($handle === false) {
@@ -86,34 +99,3 @@ while ($remaining > 0 && !feof($handle)) {
     $remaining -= strlen($chunk);
 }
 fclose($handle);
-
-function isBroadcastFileAllowed(string $fileName): bool
-{
-    $stateFile = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'broadcast.json';
-    if (!is_file($stateFile)) {
-        return false;
-    }
-
-    $content = file_get_contents($stateFile);
-    $state = json_decode($content ?: '{}', true);
-    if (!is_array($state)) {
-        return false;
-    }
-
-    $updatedAt = (int) ($state['updatedAt'] ?? 0);
-    if (($state['live'] ?? false) !== true || time() - $updatedAt > 30) {
-        return false;
-    }
-
-    if (($state['file'] ?? null) === $fileName) {
-        return true;
-    }
-
-    foreach (($state['tracks'] ?? []) as $track) {
-        if (is_array($track) && ($track['file'] ?? null) === $fileName) {
-            return true;
-        }
-    }
-
-    return false;
-}

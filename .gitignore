@@ -9,5 +9,13 @@
 *.sqlite-shm
 *.sqlite-wal
 
-# Identifiants de l'ancienne application musicale (stockage d'execution).
+# Comptes, stockage d'execution et nouveaux fichiers audio et images de SuSZic.
 /data/users.json
+/data/*.lock
+/data/music-*
+/data/broadcast.json
+/uploads/audio/*
+!/uploads/audio/.gitkeep
+!/uploads/audio/.htaccess
+/uploads/images/*
+!/uploads/images/.htaccess

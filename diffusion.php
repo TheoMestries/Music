@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+header('Referrer-Policy: no-referrer');
 ?>
 <!doctype html>
 <html lang="fr">
@@ -13,7 +14,7 @@ declare(strict_types=1);
     <main class="diffusion-shell">
       <section class="diffusion-panel" aria-live="polite">
         <div class="brand diffusion-brand">
-          <div class="brand-mark" aria-hidden="true">â™ª</div>
+          <div class="brand-mark" aria-hidden="true">♪</div>
           <div>
             <h1>SuSZic</h1>
             <p>Diffusion en direct</p>
@@ -32,7 +33,7 @@ declare(strict_types=1);
         </div>
 
         <div class="diffusion-controls">
-          <button id="diffusion-play" type="button" class="secondary-button">Ecouter</button>
+          <button id="diffusion-play" type="button" class="secondary-button" disabled>Écouter</button>
           <label class="diffusion-volume" for="diffusion-volume">
             <span>Volume</span>
             <input id="diffusion-volume" type="range" min="0" max="1" step="0.01" value="0.8">
@@ -42,6 +43,6 @@ declare(strict_types=1);
     </main>
 
     <script src="theme.js?v=1"></script>
-    <script src="diffusion.js?v=diffusion-1"></script>
+    <script src="diffusion.js?v=accounts-1"></script>
   </body>
 </html>

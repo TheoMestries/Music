@@ -300,6 +300,24 @@ select:focus {
   overflow: auto;
 }
 
+.campaign-row {
+  display: grid;
+  gap: 5px;
+}
+
+.campaign-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.campaign-actions .secondary-button {
+  min-height: 32px;
+  padding-inline: 9px;
+  font-size: 12px;
+}
+
 .campaign-button {
   display: grid;
   gap: 3px;

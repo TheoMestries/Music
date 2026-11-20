@@ -1,4 +1,6 @@
 const broadcastEndpoint = "broadcast.php";
+const room = new URLSearchParams(window.location.search).get("room") ?? "";
+const roomQuery = `room=${encodeURIComponent(room)}`;
 const audioFadeOutDuration = 1000;
 
 const diffusionState = {
@@ -26,24 +28,35 @@ volumeInput.addEventListener("input", () => {
 
 async function pollBroadcast() {
   try {
-    const response = await fetch(`${broadcastEndpoint}?action=state`, { cache: "no-store" });
+    const response = await fetch(`${broadcastEndpoint}?action=state&${roomQuery}`, { cache: "no-store" });
+    if (response.status === 404) {
+      clearPlayers();
+      showOfflineState("Salle de diffusion introuvable");
+      return;
+    }
+    if (!response.ok) throw new Error("Diffusion inaccessible");
     const state = await response.json();
     diffusionState.lastState = state;
-    await applyBroadcastState(state, false);
+    applyBroadcastState(state, false).catch(() => {
+      clearPlayers();
+      showOfflineState("Lecture interrompue");
+    });
   } catch (error) {
     clearPlayers();
     showOfflineState("Connexion interrompue");
   }
+  window.setTimeout(pollBroadcast, 1500);
 }
 
 async function applyBroadcastState(state, userRequestedPlay) {
   const tracks = getStateTracks(state);
-  if (!state?.live || tracks.length === 0) {
+  if (!state?.live) {
     clearPlayers();
     showOfflineState("Diffusion hors ligne");
     return;
   }
 
+  playButton.disabled = tracks.length === 0;
   const activeKeys = new Set();
   const playPromises = [];
   tracks.forEach((track) => {
@@ -73,7 +86,7 @@ async function applyBroadcastState(state, userRequestedPlay) {
     await Promise.all(playPromises);
   } catch (error) {
     diffusionState.enabledByUser = false;
-    playButton.textContent = "Ecouter";
+    playButton.textContent = "Écouter";
   }
 }
 
@@ -103,7 +116,7 @@ function getOrCreatePlayer(key, track) {
     return existing;
   }
 
-  const player = new Audio(`audio.php?broadcast=1&file=${encodeURIComponent(track.file)}`);
+  const player = new Audio(`audio.php?${roomQuery}&file=${encodeURIComponent(track.file)}`);
   player.preload = "auto";
   player.dataset.sourceVolume = String(normalizeVolume(track.volume));
   updatePlayerVolume(player);
@@ -124,21 +137,23 @@ function clearPlayers() {
 
 function updateStatus(tracks, state) {
   const count = tracks.length;
-  statusText.textContent = count > 1 ? `${count} musiques en direct` : "Diffusion en direct";
+  const liveStatus = count > 1 ? `${count} musiques en direct` : "Diffusion en direct";
+  statusText.textContent = count === 0 ? "En direct · en attente de musique" : liveStatus;
   liveDot.classList.add("is-live");
-  playButton.textContent = diffusionState.enabledByUser ? "Synchroniser" : "Ecouter";
+  playButton.textContent = diffusionState.enabledByUser ? "Synchroniser" : "Écouter";
 
   title.textContent = state.campaignName || "Campagne en direct";
 
   const expectedTimes = tracks.map((track) => getExpectedTime(track, state.updatedAt));
-  timeLabel.textContent = formatTime(Math.max(...expectedTimes));
+  timeLabel.textContent = formatTime(Math.max(0, ...expectedTimes));
 }
 
 function showOfflineState(message) {
   statusText.textContent = message;
   title.textContent = "Aucune musique";
   liveDot.classList.remove("is-live");
-  playButton.textContent = "Ecouter";
+  playButton.textContent = "Écouter";
+  playButton.disabled = true;
   timeLabel.textContent = "00:00";
 }
 
@@ -214,4 +229,3 @@ function formatTime(seconds) {
 }
 
 pollBroadcast();
-window.setInterval(pollBroadcast, 1500);

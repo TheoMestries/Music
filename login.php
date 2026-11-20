@@ -10,19 +10,31 @@ if (isAuthenticated()) {
     exit;
 }
 
+$register = ($_GET['mode'] ?? '') === 'register';
+$heading = $register ? 'Créer un compte' : 'Connexion';
 $error = '';
+$username = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = trim((string) ($_POST['username'] ?? ''));
-    $password = (string) ($_POST['password'] ?? '');
-
-    if (!hasConfiguredUsers()) {
-        $error = 'Aucun identifiant serveur configuré.';
-    } elseif (authenticateUser($username, $password)) {
+    $username = is_string($_POST['username'] ?? null) ? trim($_POST['username']) : '';
+    $password = is_string($_POST['password'] ?? null) ? $_POST['password'] : '';
+    try {
+        if (!validCsrfToken($_POST['csrf'] ?? null)) {
+            throw new DomainException('Le formulaire a expiré. Réessayez.');
+        }
+        if ($register) {
+            $confirmation = is_string($_POST['confirmation'] ?? null) ? $_POST['confirmation'] : '';
+            registerMusicUser($username, $password, $confirmation);
+        } elseif (!authenticateUser($username, $password)) {
+            throw new DomainException('Identifiant ou mot de passe incorrect.');
+        }
         header('Location: index.php');
         exit;
-    } else {
-        $error = 'Identifiant ou mot de passe incorrect.';
+    } catch (DomainException $exception) {
+        $error = $exception->getMessage();
+    } catch (Throwable $exception) {
+        error_log((string) $exception);
+        $error = 'Impossible d’accéder au compte pour le moment.';
     }
 }
 ?>
@@ -31,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Connexion - SuSZic</title>
+    <title><?= $heading ?> - SuSZic</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
@@ -44,25 +56,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <div class="brand-mark" aria-hidden="true">♪</div>
           <div>
             <h1>SuSZic</h1>
-            <p>Connexion requise</p>
+            <p><?= $heading ?></p>
           </div>
         </div>
 
         <?php if ($error !== ''): ?>
-          <p class="login-error"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></p>
+          <p class="login-error" role="alert"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></p>
         <?php endif; ?>
 
-        <form method="post" class="panel-form login-form" autocomplete="off">
+        <form method="post" class="panel-form login-form">
+          <input type="hidden" name="csrf" value="<?= csrfToken() ?>">
           <label for="username">Identifiant</label>
-          <input id="username" name="username" type="text" required autofocus>
+          <input id="username" name="username" type="text" autocomplete="username" value="<?= htmlspecialchars($username, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" <?= $register ? 'minlength="3" maxlength="40"' : '' ?> required autofocus>
 
           <label for="password">Mot de passe</label>
-          <input id="password" name="password" type="password" required>
+          <input id="password" name="password" type="password" autocomplete="<?= $register ? 'new-password' : 'current-password' ?>" <?= $register ? 'minlength="8"' : '' ?> required>
+          <?php if ($register): ?>
+            <label for="confirmation">Confirmer le mot de passe</label>
+            <input id="confirmation" name="confirmation" type="password" autocomplete="new-password" required>
+          <?php endif; ?>
 
           <button type="submit" class="secondary-button">
-            Se connecter
+            <?= $register ? 'Créer mon compte' : 'Se connecter' ?>
           </button>
         </form>
+        <p>
+          <?php if ($register): ?>
+            Déjà un compte ? <a href="login.php">Se connecter</a>
+          <?php else: ?>
+            <a href="login.php?mode=register">Créer un compte</a>
+          <?php endif; ?>
+        </p>
       </section>
     </main>
     <script src="theme.js?v=1"></script>

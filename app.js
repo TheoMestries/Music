@@ -1,8 +1,14 @@
+// Cette API ne stocke que les projets audio. Les campagnes JDR canoniques
+// sont gerees par /map/ et identifiees par leur id SQLite.
 const apiEndpoint = "api.php";
+const csrfHeaders = { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]').content };
 const audioFadeOutDuration = 1000;
+let campaignSave = Promise.resolve();
+let broadcastRequest = null;
 
 const state = {
   campaigns: [],
+  revision: null,
   activeCampaignId: null,
   selectedFolderId: "root",
   selectedPlaylistId: null,
@@ -12,7 +18,8 @@ const state = {
   playlistRuns: new Map(),
   playlistCurrentTrackIds: new Map(),
   playlistOpenTimer: null,
-  broadcastEnabled: false,
+  broadcastRun: null,
+  broadcastChanging: false,
   broadcastTimer: null,
   lastBroadcastSentAt: 0,
 };
@@ -48,13 +55,30 @@ const renameModal = document.querySelector("#rename-modal");
 const renameForm = document.querySelector("#rename-form");
 const renameName = document.querySelector("#rename-name");
 const renameLabel = document.querySelector("#rename-label");
+const transferModal = document.querySelector("#transfer-modal");
+const transferForm = document.querySelector("#transfer-form");
+const transferUsername = document.querySelector("#transfer-username");
 const broadcastToggle = document.querySelector("#broadcast-toggle");
 const broadcastLabel = document.querySelector("#broadcast-label");
+const broadcastLink = document.querySelector("#broadcast-link");
 
 campaignSwitch.addEventListener("click", () => openCampaignModal());
-if (broadcastToggle) {
-  broadcastToggle.addEventListener("click", () => toggleBroadcast());
-}
+broadcastToggle.addEventListener("click", () => toggleBroadcast());
+document.querySelector("#broadcast-copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(broadcastLink.href);
+    document.querySelector("#broadcast-copy-status").textContent = "Lien copié";
+  } catch {
+    window.prompt("Copiez le lien de votre salle", broadcastLink.href);
+  }
+});
+transferForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const username = transferUsername.value.trim();
+  if (username && await removeCampaign("transferCampaign", transferForm.dataset.campaignId, username)) {
+    closeModal("transfer-modal");
+  }
+});
 campaignModalClose.addEventListener("click", () => closeCampaignModal());
 campaignModal.addEventListener("click", (event) => {
   if (event.target === campaignModal && state.activeCampaignId) {
@@ -67,14 +91,17 @@ document.addEventListener("click", (event) => {
     closeModal(closeButton.dataset.closeModal);
   }
 
-  if ([folderModal, playlistModal, trackModal, renameModal].includes(event.target)) {
+  if ([folderModal, playlistModal, trackModal, renameModal, transferModal].includes(event.target)) {
     closeModal(event.target.id);
   }
 });
 
-window.addEventListener("beforeunload", () => {
-  if (!state.broadcastEnabled) return;
-  navigator.sendBeacon?.("broadcast.php?action=stop");
+window.addEventListener("pagehide", () => {
+  if (!state.broadcastRun) return;
+  navigator.sendBeacon?.("broadcast.php?action=stop", new URLSearchParams({
+    run: state.broadcastRun,
+    csrf: csrfHeaders["X-CSRF-Token"],
+  }));
 });
 
 libraryTree.addEventListener("click", (event) => {
@@ -388,7 +415,7 @@ libraryTree.addEventListener("dragend", () => {
 campaignForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const name = campaignName.value.trim();
-  if (!name) return;
+  if (!name || state.revision === null) return;
 
   const campaign = {
     id: createId(),
@@ -401,10 +428,7 @@ campaignForm.addEventListener("submit", (event) => {
   };
 
   state.campaigns.unshift(campaign);
-  state.activeCampaignId = campaign.id;
-  state.selectedFolderId = "root";
-  state.selectedPlaylistId = null;
-  state.openPlaylistIds = [];
+  selectCampaign(campaign.id);
   campaignName.value = "";
   persistAndRender();
   closeCampaignModal();
@@ -462,7 +486,9 @@ trackForm.addEventListener("submit", async (event) => {
   const campaign = getActiveCampaign();
   const title = trackTitle.value.trim();
   const file = trackFile.files[0];
-  if (!campaign || !title || !file) return;
+  const destination = trackPlaylist.value === "root" ? campaign : findPlaylist(campaign, trackPlaylist.value);
+  const submit = trackForm.querySelector("button[type=submit]");
+  if (!campaign || !destination || !title || !file || submit.disabled) return;
 
   const trackId = createId();
   const track = {
@@ -474,26 +500,27 @@ trackForm.addEventListener("submit", async (event) => {
     fileSize: file.size,
   };
 
+  submit.disabled = true;
   try {
-    track.audioUrl = await saveAudioFile(trackId, file);
+    track.audioUrl = await uploadMedia("upload", "audio", file);
+    if (!state.campaigns.includes(campaign) ||
+        (destination !== campaign && findPlaylist(campaign, destination.id) !== destination)) return;
+
+    destination.tracks.push(track);
+    touch(campaign);
+    await saveCampaigns();
+
+    trackTitle.value = "";
+    trackFile.value = "";
+    render();
+    closeModal("track-modal");
   } catch (error) {
+    const index = destination.tracks.indexOf(track);
+    if (index >= 0) destination.tracks.splice(index, 1);
     showBackendError(error);
-    return;
+  } finally {
+    submit.disabled = false;
   }
-
-  if (trackPlaylist.value === "root") {
-    campaign.tracks.push(track);
-  } else {
-    const playlist = findPlaylist(campaign, trackPlaylist.value);
-    if (!playlist) return;
-    playlist.tracks.push(track);
-  }
-
-  trackTitle.value = "";
-  trackFile.value = "";
-  touch(campaign);
-  persistAndRender();
-  closeModal("track-modal");
 });
 
 renameForm.addEventListener("submit", (event) => {
@@ -505,9 +532,10 @@ async function loadCampaigns() {
   const response = await fetch(`${apiEndpoint}?action=load`);
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(payload.error || "Impossible de charger les campagnes.");
+    throw new Error(payload.error || "Impossible de charger les projets audio.");
   }
-  return normalizeCampaigns(payload.campaigns ?? []);
+  state.revision = payload.revision;
+  return normalizeCampaigns(payload.campaigns);
 }
 
 function normalizeCampaigns(campaigns) {
@@ -541,19 +569,48 @@ function normalizeTrack(track) {
   };
 }
 
-async function saveCampaigns() {
-  const response = await fetch(`${apiEndpoint}?action=save`, {
+async function campaignRequest(action, data) {
+  const response = await fetch(`${apiEndpoint}?action=${action}`, {
     method: "POST",
     headers: {
+      ...csrfHeaders,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      campaigns: state.campaigns,
-    }),
+    body: JSON.stringify({ ...data, revision: state.revision }),
   });
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(payload.error || "Impossible de sauvegarder les campagnes.");
+    throw new Error(payload.error || "Impossible de sauvegarder les projets audio.");
+  }
+  state.revision = payload.revision;
+  return payload;
+}
+
+function saveCampaigns() {
+  const campaigns = JSON.parse(JSON.stringify(state.campaigns));
+  campaignSave = campaignSave.catch(() => {}).then(() => campaignRequest("save", { campaigns }));
+  return campaignSave;
+}
+
+async function removeCampaign(action, id, username) {
+  campaignModal.inert = true;
+  transferModal.inert = true;
+  try {
+    await campaignSave;
+    await campaignRequest(action, { id, username });
+    state.campaigns = state.campaigns.filter((campaign) => campaign.id !== id);
+    if (state.activeCampaignId === id) {
+      selectCampaign(null);
+      if (state.broadcastRun) await toggleBroadcast();
+    }
+    render();
+    return true;
+  } catch (error) {
+    showBackendError(error);
+    return false;
+  } finally {
+    campaignModal.inert = false;
+    transferModal.inert = false;
   }
 }
 
@@ -565,6 +622,7 @@ function persistAndRender() {
 function render() {
   renderCampaigns();
   renderActiveCampaign();
+  updateBroadcastControl();
   campaignSwitch.classList.toggle("hidden", !state.activeCampaignId);
   if (!state.activeCampaignId) {
     openCampaignModal();
@@ -574,6 +632,7 @@ function render() {
 async function initializeApp() {
   try {
     state.campaigns = await loadCampaigns();
+    campaignForm.querySelector("button[type=submit]").disabled = false;
   } catch (error) {
     showBackendError(error);
   }
@@ -613,12 +672,14 @@ function renderCampaigns() {
   if (state.campaigns.length === 0) {
     const note = document.createElement("p");
     note.className = "empty-note";
-    note.textContent = "Aucune campagne pour le moment.";
+    note.textContent = "Aucun projet audio pour le moment.";
     campaignList.append(note);
     return;
   }
 
   state.campaigns.forEach((campaign) => {
+    const row = document.createElement("div");
+    row.className = "campaign-row";
     const button = document.createElement("button");
     button.type = "button";
     button.className = `campaign-button${campaign.id === state.activeCampaignId ? " active" : ""}`;
@@ -627,15 +688,53 @@ function renderCampaigns() {
       <span>${countPlaylists(campaign)} playlists · ${countTracks(campaign)} musiques</span>
     `;
     button.addEventListener("click", () => {
-      state.activeCampaignId = campaign.id;
-      state.selectedFolderId = "root";
-      state.selectedPlaylistId = null;
-      state.openPlaylistIds = [];
+      selectCampaign(campaign.id);
       closeCampaignModal();
       render();
     });
-    campaignList.append(button);
+
+    const actions = document.createElement("div");
+    actions.className = "campaign-actions";
+    const commands = [
+      ["Renommer", () => openRenameModal("campaign", campaign.id, campaign.name)],
+      ["Transférer", () => {
+        transferForm.dataset.campaignId = campaign.id;
+        transferForm.reset();
+        document.querySelector("#transfer-summary").textContent =
+          `« ${campaign.name} » sera déplacé vers le compte destinataire avec ses dossiers, ses playlists et ses fichiers.`;
+        openModal("transfer-modal");
+        transferUsername.focus();
+      }],
+      ["Supprimer", () => {
+        if (window.confirm(`Supprimer définitivement le projet « ${campaign.name} » ?`)) {
+          void removeCampaign("deleteCampaign", campaign.id);
+        }
+      }],
+    ];
+    commands.forEach(([label, execute]) => {
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "secondary-button";
+      action.textContent = label;
+      action.setAttribute("aria-label", `${label} ${campaign.name}`);
+      action.addEventListener("click", execute);
+      actions.append(action);
+    });
+    row.append(button, actions);
+    campaignList.append(row);
   });
+}
+
+function selectCampaign(id) {
+  if (id === state.activeCampaignId) return;
+  window.clearTimeout(state.playlistOpenTimer);
+  state.playlistRuns.forEach((_players, playlistId) => stopPlaylist(playlistId));
+  stopPanelPlayers(libraryTree);
+  libraryTree.replaceChildren();
+  state.activeCampaignId = id;
+  state.selectedFolderId = "root";
+  state.selectedPlaylistId = null;
+  state.openPlaylistIds = [];
 }
 
 function openCampaignModal() {
@@ -680,6 +779,7 @@ function closeModal(modalId) {
 function openRenameModal(type, id, currentName) {
   state.renameTarget = { type, id };
   const labels = {
+    campaign: "Nom du projet audio",
     folder: "Nom du dossier",
     playlist: "Nom de la playlist",
     track: "Nom de la musique",
@@ -692,10 +792,16 @@ function openRenameModal(type, id, currentName) {
 }
 
 function applyRename() {
-  const campaign = getActiveCampaign();
   const target = state.renameTarget;
+  const campaign = target?.type === "campaign"
+    ? state.campaigns.find((item) => item.id === target.id)
+    : getActiveCampaign();
   const name = renameName.value.trim();
   if (!campaign || !target || !name) return;
+
+  if (target.type === "campaign") {
+    campaign.name = name;
+  }
 
   if (target.type === "folder") {
     if (target.id === "root") {
@@ -733,7 +839,8 @@ async function renderActiveCampaign() {
   folderTotal.textContent = campaign.folders.length;
   playlistTotal.textContent = countPlaylists(campaign);
   trackTotal.textContent = countTracks(campaign);
-  activeUpdated.textContent = `Mis à jour ${formatDate(campaign.updatedAt)}`;
+  const lastUpdate = formatDate(campaign.updatedAt);
+  activeUpdated.textContent = lastUpdate ? `Mis à jour ${lastUpdate}` : "";
 
   renderFolderOptions(campaign);
   renderPlaylistOptions(campaign);
@@ -779,7 +886,7 @@ async function renderTree(campaign) {
   interfaceView.append(renderFolderPanel(campaign));
   interfaceView.append(renderPlaylistPanel(campaign));
   interfaceView.append(await renderPlaylistDetailStack(campaign));
-  libraryTree.append(interfaceView);
+  if (campaign === getActiveCampaign()) libraryTree.append(interfaceView);
 }
 
 function ensureSelection(campaign) {
@@ -823,7 +930,7 @@ function renderFolderButton(folderId, name, playlistCount) {
     <div class="folder-button-header">
       <span>${escapeHtml(name)}</span>
       <div class="folder-actions">
-        <button type="button" class="folder-menu-button" data-folder-menu aria-label="Actions pour ${escapeHtml(name)}">⋮</button>
+        <button type="button" class="folder-menu-button" data-folder-menu aria-label="Actions pour ${escapeAttribute(name)}">⋮</button>
         <div class="folder-action-panel hidden">
           <button type="button" data-folder-action="rename" ${folderId === "root" ? "disabled" : ""}>Modifier le nom</button>
           <button type="button" data-folder-action="duplicate" ${folderId === "root" ? "disabled" : ""}>Duppliquer le dossier</button>
@@ -868,8 +975,8 @@ function renderPlaylistPanel(campaign) {
         <div class="playlist-tile-top">
           <span></span>
           <div class="playlist-actions">
-            <button type="button" class="playlist-tile-play-button" data-play-playlist="${playlist.id}" aria-label="Lancer ${escapeHtml(playlist.name)}">&#9654;</button>
-            <button type="button" class="playlist-menu-button" data-playlist-menu aria-label="Actions pour ${escapeHtml(playlist.name)}">⋮</button>
+            <button type="button" class="playlist-tile-play-button" data-play-playlist="${playlist.id}" aria-label="Lancer ${escapeAttribute(playlist.name)}">&#9654;</button>
+            <button type="button" class="playlist-menu-button" data-playlist-menu aria-label="Actions pour ${escapeAttribute(playlist.name)}">⋮</button>
             <div class="playlist-action-panel hidden">
               <button type="button" data-playlist-action="rename">Modifier le nom</button>
               <button type="button" data-playlist-action="delete">Supprimer la playlist</button>
@@ -949,7 +1056,7 @@ async function renderPlaylist(playlist, campaign) {
           <input type="checkbox" data-playlist-shuffle="${playlist.id}" ${playlist.shuffleOnPlay ? "checked" : ""}>
           <span>Lancé en aléatoire</span>
         </label>
-        <button type="button" class="playlist-play-button" data-play-playlist="${playlist.id}" aria-label="Lancer ${escapeHtml(playlist.name)}">▶</button>
+        <button type="button" class="playlist-play-button" data-play-playlist="${playlist.id}" aria-label="Lancer ${escapeAttribute(playlist.name)}">▶</button>
         <button type="button" class="playlist-stop-button" data-stop-playlist="${playlist.id}" aria-label="Arrêter ${escapeHtml(playlist.name)}">Stop</button>
       </div>
     </div>
@@ -1012,7 +1119,7 @@ async function renderPlaylistDetailCard(playlist, campaign) {
       </div>
       <div class="playlist-controls">
         <button type="button" class="panel-add-button" data-open-track-modal="${playlist.id}" aria-label="Ajouter une musique">+</button>
-        <button type="button" class="playlist-close-button" data-close-playlist-detail="${playlist.id}" aria-label="Fermer ${escapeHtml(playlist.name)}">×</button>
+        <button type="button" class="playlist-close-button" data-close-playlist-detail="${playlist.id}" aria-label="Fermer ${escapeAttribute(playlist.name)}">×</button>
         <label class="loop-toggle">
           <input type="checkbox" data-playlist-loop="${playlist.id}" ${playlist.loop ? "checked" : ""}>
           <span>Boucle</span>
@@ -1185,32 +1292,40 @@ function stopPlayers(players) {
 }
 
 async function toggleBroadcast() {
-  state.broadcastEnabled = !state.broadcastEnabled;
+  if (state.broadcastChanging || (!state.broadcastRun && !getActiveCampaign())) return;
+  state.broadcastChanging = true;
   updateBroadcastControl();
 
-  if (state.broadcastEnabled) {
-    startBroadcastTimer();
-    await sendBroadcastState(true);
-    return;
+  try {
+    if (state.broadcastRun) {
+      await requestBroadcast("stop", { run: state.broadcastRun });
+      state.broadcastRun = null;
+      stopBroadcastTimer();
+    } else {
+      await campaignSave;
+      const { run } = await requestBroadcast("start", currentBroadcast());
+      state.broadcastRun = run;
+      startBroadcastTimer();
+    }
+  } catch (error) {
+    showBackendError(error);
+  } finally {
+    state.broadcastChanging = false;
+    updateBroadcastControl();
   }
-
-  stopBroadcastTimer();
-  await stopBroadcast().catch(showBackendError);
 }
 
 function updateBroadcastControl() {
-  if (!broadcastToggle || !broadcastLabel) return;
-
-  broadcastToggle.classList.toggle("is-on", state.broadcastEnabled);
-  broadcastToggle.setAttribute("aria-pressed", String(state.broadcastEnabled));
-  broadcastLabel.textContent = state.broadcastEnabled ? "Diffusion ON" : "Diffusion OFF";
+  const isLive = Boolean(state.broadcastRun);
+  broadcastToggle.disabled = state.broadcastChanging || (!isLive && !state.activeCampaignId);
+  broadcastToggle.classList.toggle("is-on", isLive);
+  broadcastToggle.setAttribute("aria-pressed", String(isLive));
+  broadcastLabel.textContent = isLive ? "Diffusion ON" : "Diffusion OFF";
 }
 
 function startBroadcastTimer() {
   stopBroadcastTimer();
-  state.broadcastTimer = window.setInterval(() => {
-    sendBroadcastState(false).catch(showBackendError);
-  }, 1500);
+  state.broadcastTimer = window.setInterval(sendBroadcastState, 1500);
 }
 
 function stopBroadcastTimer() {
@@ -1220,54 +1335,53 @@ function stopBroadcastTimer() {
 }
 
 function captureBroadcastPlayer(player) {
-  if (!state.broadcastEnabled || !player) return;
-  sendBroadcastState(true).catch(showBackendError);
+  if (player) sendBroadcastState();
 }
 
 function refreshBroadcastPlayer(player, immediate = false) {
-  if (!state.broadcastEnabled || !player) return;
+  if (!state.broadcastRun || !player) return;
 
   const now = Date.now();
   if (!immediate && now - state.lastBroadcastSentAt < 900) return;
   state.lastBroadcastSentAt = now;
-  sendBroadcastState(false).catch(showBackendError);
+  sendBroadcastState();
 }
 
-async function sendBroadcastState(live) {
-  if (!state.broadcastEnabled && live) return;
+function currentBroadcast() {
+  return { campaignId: state.activeCampaignId, tracks: getBroadcastTracks() };
+}
 
-  const tracks = getBroadcastTracks();
-  const campaign = getActiveCampaign();
-  const response = await fetch("broadcast.php?action=update", {
+function sendBroadcastState() {
+  const run = state.broadcastRun;
+  if (!run || state.broadcastChanging || broadcastRequest) return;
+  broadcastRequest = requestBroadcast("update", { ...currentBroadcast(), run })
+    .catch((error) => {
+      if (state.broadcastRun !== run || state.broadcastChanging) return;
+      if (![401, 403, 409].includes(error.status)) {
+        console.error(error);
+        return;
+      }
+      state.broadcastRun = null;
+      stopBroadcastTimer();
+      updateBroadcastControl();
+      showBackendError(error);
+    })
+    .finally(() => { broadcastRequest = null; });
+}
+
+async function requestBroadcast(action, body) {
+  const response = await fetch(`broadcast.php?action=${action}`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      live: state.broadcastEnabled,
-      isPlaying: tracks.length > 0,
-      campaignName: campaign?.name ?? null,
-      tracks,
-      trackId: tracks[0]?.trackId ?? null,
-      title: tracks[0]?.title ?? null,
-      file: tracks[0]?.file ?? null,
-      currentTime: tracks[0]?.currentTime ?? 0,
-      duration: tracks[0]?.duration ?? null,
-      volume: tracks[0]?.volume ?? 1,
-    }),
+    headers: { ...csrfHeaders, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(payload.error || "Impossible de mettre a jour la diffusion.");
+    const error = new Error(payload.error || "Impossible de mettre à jour la diffusion.");
+    error.status = response.status;
+    throw error;
   }
-}
-
-async function stopBroadcast() {
-  const response = await fetch("broadcast.php?action=stop", { method: "POST" });
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error || "Impossible d'arreter la diffusion.");
-  }
+  return payload;
 }
 
 function getBroadcastTracks() {
@@ -1668,7 +1782,9 @@ async function updatePlaylistImage(input) {
   const file = input.files?.[0];
   if (!campaign || !playlist || !file) return;
 
-  playlist.imageUrl = await savePlaylistImageFile(playlist.id, file);
+  const imageUrl = await uploadMedia("uploadPlaylistImage", "image", file);
+  if (getActiveCampaign() !== campaign || findPlaylist(campaign, playlist.id) !== playlist) return;
+  playlist.imageUrl = imageUrl;
   touch(campaign);
   await saveCampaigns();
   await renderActiveCampaign();
@@ -1838,7 +1954,6 @@ async function handlePlaylistAction(actionButton) {
     const playlist = findPlaylist(campaign, tile.dataset.playlistSelect);
     if (!playlist) return;
 
-    await deletePlaylistImageFile(playlist.id);
     playlist.imageUrl = null;
     touch(campaign);
     persistAndRender();
@@ -1897,7 +2012,7 @@ function clonePlaylist(playlist) {
   };
 }
 
-async function handleTrackAction(actionButton) {
+function handleTrackAction(actionButton) {
   const campaign = getActiveCampaign();
   const item = actionButton.closest(".track-item");
   if (!campaign || !item) return;
@@ -1925,7 +2040,6 @@ async function handleTrackAction(actionButton) {
 
   if (actionButton.dataset.trackAction === "remove-all") {
     removeTrackEverywhere(campaign, trackId);
-    await deleteAudioFile(trackId);
   }
 
   touch(campaign);
@@ -1958,34 +2072,18 @@ function removeTrackEverywhere(campaign, trackId) {
   });
 }
 
-async function saveAudioFile(trackId, file) {
+async function uploadMedia(action, field, file) {
   const formData = new FormData();
-  formData.append("trackId", trackId);
-  formData.append("audio", file);
+  formData.append(field, file);
 
-  const response = await fetch(`${apiEndpoint}?action=upload`, {
+  const response = await fetch(`${apiEndpoint}?action=${action}`, {
     method: "POST",
+    headers: csrfHeaders,
     body: formData,
   });
   const payload = await response.json();
   if (!response.ok) {
-    throw new Error(payload.error || "Impossible d'uploader le fichier audio.");
-  }
-  return payload.url;
-}
-
-async function savePlaylistImageFile(playlistId, file) {
-  const formData = new FormData();
-  formData.append("playlistId", playlistId);
-  formData.append("image", file);
-
-  const response = await fetch(`${apiEndpoint}?action=uploadPlaylistImage`, {
-    method: "POST",
-    body: formData,
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error || "Impossible d'uploader l'image.");
+    throw new Error(payload.error || "Impossible de téléverser le fichier.");
   }
   return payload.url;
 }
@@ -1995,7 +2093,7 @@ function getPlaylistImageUrl(playlist) {
   if (!imageUrl) return null;
 
   if (imageUrl.startsWith("uploads/images/")) {
-    return imageUrl;
+    return `image.php?file=${encodeURIComponent(imageUrl.split("/").pop())}`;
   }
 
   return imageUrl;
@@ -2010,34 +2108,6 @@ function getAudioUrl(track) {
   }
 
   return audioUrl;
-}
-
-async function deleteAudioFile(trackId) {
-  const response = await fetch(`${apiEndpoint}?action=deleteAudio`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ trackId }),
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error || "Impossible de supprimer le fichier audio.");
-  }
-}
-
-async function deletePlaylistImageFile(playlistId) {
-  const response = await fetch(`${apiEndpoint}?action=deletePlaylistImage`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ playlistId }),
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error || "Impossible de supprimer l'image.");
-  }
 }
 
 function findTrack(campaign, trackId) {
@@ -2234,13 +2304,15 @@ function touch(campaign) {
 }
 
 function formatDate(value) {
+  const date = new Date(value);
+  if (!value || !Number.isFinite(date.getTime())) return "";
   return new Intl.DateTimeFormat("fr-FR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function escapeHtml(value) {

@@ -2,7 +2,10 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
-requireLogin();
+$username = requireLogin();
+$room = musicRoomForUser($username);
+$csrf = csrfToken();
+header('Cache-Control: no-store');
 ?>
 <!doctype html>
 <html lang="fr">
@@ -10,7 +13,8 @@ requireLogin();
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Campagnes musicales</title>
-    <link rel="stylesheet" href="styles.css?v=diffusion-1">
+    <meta name="csrf-token" content="<?= $csrf ?>">
+    <link rel="stylesheet" href="styles.css?v=accounts-1">
   </head>
   <body>
     <main class="app-shell">
@@ -20,21 +24,26 @@ requireLogin();
             <div class="brand-mark" aria-hidden="true">♪</div>
             <div>
               <h1>SuSZic</h1>
-              <p>Bibliothèque musicale par Campagnes</p>
+              <p>Bibliothèque musicale par projets audio</p>
             </div>
           </div>
           <div class="topbar-actions">
             <div class="broadcast-control" aria-label="Diffusion en direct">
-              <button id="broadcast-toggle" type="button" class="broadcast-toggle" aria-pressed="false">
+              <button id="broadcast-toggle" type="button" class="broadcast-toggle" aria-pressed="false" disabled>
                 <span class="broadcast-dot" aria-hidden="true"></span>
                 <span id="broadcast-label">Diffusion OFF</span>
               </button>
-              <a class="secondary-button broadcast-link" href="diffusion" target="_blank" rel="noopener">Lien diffusion</a>
+              <a id="broadcast-link" class="secondary-button broadcast-link" href="diffusion.php?room=<?= $room ?>" target="_blank" rel="noopener">Ma salle</a>
+              <button id="broadcast-copy" type="button" class="secondary-button">Copier le lien</button>
+              <span id="broadcast-copy-status" role="status"></span>
             </div>
             <a class="secondary-button" href="map/">Sus20</a>
             <button id="theme-toggle" type="button" class="secondary-button">Mode sombre</button>
-            <button id="campaign-switch" type="button" class="secondary-button">Changer de campagne</button>
-            <a class="secondary-button logout-button" href="logout.php">Déconnexion</a>
+            <button id="campaign-switch" type="button" class="secondary-button">Changer de projet audio</button>
+            <form method="post" action="logout.php">
+              <input type="hidden" name="csrf" value="<?= $csrf ?>">
+              <button type="submit" class="secondary-button logout-button" title="<?= htmlspecialchars($username, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>">Déconnexion</button>
+            </form>
           </div>
         </header>
 
@@ -42,14 +51,14 @@ requireLogin();
           <div class="record-visual" aria-hidden="true">
             <span></span>
           </div>
-          <h2>Choisis une campagne pour commencer</h2>
-          <p>Chaque campagne contient ses dossiers, playlists et musiques.</p>
+          <h2>Choisis un projet audio pour commencer</h2>
+          <p>Chaque projet audio contient ses dossiers, playlists et musiques.</p>
         </div>
 
         <div id="campaign-view" class="campaign-view hidden">
           <header class="workspace-header">
             <div>
-              <p class="eyebrow">Campagne active</p>
+              <p class="eyebrow">Projet audio actif</p>
               <h2 id="active-campaign-name"></h2>
             </div>
             <div class="stats">
@@ -74,22 +83,22 @@ requireLogin();
       <div class="campaign-modal-panel">
         <div class="campaign-modal-header">
           <div>
-            <p class="eyebrow">Campagnes</p>
-            <h2 id="campaign-modal-title">Choisir une campagne</h2>
+            <p class="eyebrow">Projets audio</p>
+            <h2 id="campaign-modal-title">Choisir un projet audio</h2>
           </div>
           <button id="campaign-modal-close" type="button" class="modal-close-button" aria-label="Fermer">×</button>
         </div>
 
         <form id="campaign-form" class="panel-form">
-          <label for="campaign-name">Nouveau projet de campagne</label>
+          <label for="campaign-name">Nouveau projet audio</label>
           <div class="input-row">
-            <input id="campaign-name" name="campaign-name" type="text" placeholder="Nom de la campagne" autocomplete="off" required>
-            <button type="submit" class="icon-button" aria-label="Créer la campagne" title="Créer la campagne">+</button>
+            <input id="campaign-name" name="campaign-name" type="text" placeholder="Nom du projet audio" autocomplete="off" required>
+            <button type="submit" class="icon-button" aria-label="Créer le projet audio" title="Créer le projet audio" disabled>+</button>
           </div>
         </form>
 
         <div class="section-title">
-          <span>Campagnes disponibles</span>
+          <span>Projets audio disponibles</span>
           <strong id="campaign-count">0</strong>
         </div>
         <div id="campaign-list" class="campaign-list"></div>
@@ -176,7 +185,22 @@ requireLogin();
       </div>
     </div>
 
+    <div id="transfer-modal" class="campaign-modal hidden" role="dialog" aria-modal="true" aria-labelledby="transfer-modal-title">
+      <div class="campaign-modal-panel">
+        <div class="campaign-modal-header">
+          <h2 id="transfer-modal-title">Transférer le projet audio</h2>
+          <button type="button" class="modal-close-button" data-close-modal="transfer-modal" aria-label="Fermer">×</button>
+        </div>
+        <form id="transfer-form" class="panel-form">
+          <p id="transfer-summary"></p>
+          <label for="transfer-username">Identifiant du compte destinataire</label>
+          <input id="transfer-username" type="text" autocomplete="off" required>
+          <button type="submit" class="secondary-button">Confirmer le transfert</button>
+        </form>
+      </div>
+    </div>
+
     <script src="theme.js?v=1"></script>
-    <script src="app.js?v=diffusion-1"></script>
+    <script src="app.js?v=accounts-1"></script>
   </body>
 </html>
