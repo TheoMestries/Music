@@ -13,7 +13,9 @@ try {
         if ($room === null) {
             throw new DomainException('Salle de diffusion introuvable.', 404);
         }
-        echo json_encode(musicPublicBroadcast($room['room'], $room['owner']), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $state = musicPublicBroadcast($room['room'], $room['owner']);
+        $state['serverTime'] = microtime(true);
+        echo json_encode($state, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         exit;
     }
 
@@ -52,7 +54,7 @@ try {
             'run' => $action === 'start' ? bin2hex(random_bytes(16)) : $run,
             'campaignId' => $campaign['id'],
             'tracks' => musicBroadcastTracks($data['tracks'] ?? [], $files),
-            'updatedAt' => time(),
+            'updatedAt' => $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true),
         ];
         return ['run' => $state['run']];
     });

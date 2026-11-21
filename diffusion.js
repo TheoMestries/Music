@@ -8,6 +8,8 @@ const diffusionState = {
   players: new Map(),
   fadeFrames: new Map(),
   lastState: null,
+  lastStateReceivedAt: 0,
+  responseTravelTime: 0,
 };
 
 const playButton = document.querySelector("#diffusion-play");
@@ -28,6 +30,7 @@ volumeInput.addEventListener("input", () => {
 
 async function pollBroadcast() {
   try {
+    const requestedAt = performance.now();
     const response = await fetch(`${broadcastEndpoint}?action=state&${roomQuery}`, { cache: "no-store" });
     if (response.status === 404) {
       clearPlayers();
@@ -37,6 +40,8 @@ async function pollBroadcast() {
     if (!response.ok) throw new Error("Diffusion inaccessible");
     const state = await response.json();
     diffusionState.lastState = state;
+    diffusionState.lastStateReceivedAt = performance.now();
+    diffusionState.responseTravelTime = (diffusionState.lastStateReceivedAt - requestedAt) / 2000;
     applyBroadcastState(state, false).catch(() => {
       clearPlayers();
       showOfflineState("Lecture interrompue");
@@ -63,7 +68,7 @@ async function applyBroadcastState(state, userRequestedPlay) {
     const key = getTrackKey(track);
     activeKeys.add(key);
     const player = getOrCreatePlayer(key, track);
-    const expectedTime = getExpectedTime(track, state.updatedAt);
+    const expectedTime = getExpectedTime(track, state);
 
     player.dataset.sourceVolume = String(normalizeVolume(track.volume));
     updatePlayerVolume(player);
@@ -144,7 +149,7 @@ function updateStatus(tracks, state) {
 
   title.textContent = state.campaignName || "Campagne en direct";
 
-  const expectedTimes = tracks.map((track) => getExpectedTime(track, state.updatedAt));
+  const expectedTimes = tracks.map((track) => getExpectedTime(track, state));
   timeLabel.textContent = formatTime(Math.max(0, ...expectedTimes));
 }
 
@@ -205,8 +210,10 @@ function cancelPlayerFade(key, player) {
   updatePlayerVolume(player);
 }
 
-function getExpectedTime(track, updatedAt) {
-  const elapsed = (Date.now() / 1000) - Number(updatedAt || 0);
+function getExpectedTime(track, state) {
+  const serverTime = Number(state.serverTime || state.updatedAt || 0);
+  const timeSinceReceipt = (performance.now() - diffusionState.lastStateReceivedAt) / 1000;
+  const elapsed = serverTime - Number(state.updatedAt || serverTime) + diffusionState.responseTravelTime + timeSinceReceipt;
   const currentTime = Number(track.currentTime || 0) + Math.max(elapsed, 0);
   const duration = Number(track.duration || 0);
   return duration > 0 ? Math.min(currentTime, duration) : currentTime;

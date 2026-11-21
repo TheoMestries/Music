@@ -43,6 +43,6 @@ header('Referrer-Policy: no-referrer');
     </main>
 
     <script src="theme.js?v=1"></script>
-    <script src="diffusion.js?v=accounts-1"></script>
+    <script src="diffusion.js?v=sync-1"></script>
   </body>
 </html>
