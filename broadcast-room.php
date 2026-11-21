@@ -41,6 +41,7 @@ function musicBroadcastTracks(mixed $tracks, array $files): array
         }
         $result[] = [
             'instanceId' => musicBroadcastText($track['instanceId'] ?? null, 80),
+            'positionRevision' => musicBroadcastText($track['positionRevision'] ?? null, 80),
             'trackId' => musicBroadcastText($track['trackId'] ?? null, 80),
             'title' => musicBroadcastText($track['title'] ?? null, 160) ?? 'Musique en direct',
             'file' => $file,

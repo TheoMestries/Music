@@ -205,6 +205,6 @@ header('Cache-Control: no-store');
     </div>
 
     <script src="theme.js?v=1"></script>
-    <script src="app.js?v=accounts-1"></script>
+    <script src="app.js?v=broadcast-position-1"></script>
   </body>
 </html>

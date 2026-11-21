@@ -1410,6 +1410,7 @@ function getBroadcastTrackMetadata(player) {
 
   return {
     instanceId: player.dataset.broadcastInstanceId || item.dataset.trackId,
+    positionRevision: player.dataset.broadcastPositionRevision,
     trackId: item.dataset.trackId,
     title: track.title,
     file,
@@ -1698,6 +1699,9 @@ async function renderTrack(track, campaign, locationType, playlistId) {
     player.volume = normalizeVolume(track.volume);
     player.dataset.broadcastInstanceId = createId();
     player.addEventListener("play", () => {
+      if (player.dataset.manualFadeOut !== "true") {
+        player.dataset.broadcastPositionRevision = createId();
+      }
       delete player.dataset.pauseFadeCompleted;
       syncPlayerPlayingState(player, true);
       captureBroadcastPlayer(player);
@@ -1732,6 +1736,7 @@ async function renderTrack(track, campaign, locationType, playlistId) {
       player.dataset.seekingPlayer = "true";
     });
     player.addEventListener("seeked", () => {
+      player.dataset.broadcastPositionRevision = createId();
       refreshBroadcastPlayer(player, true);
       requestAnimationFrame(() => {
         delete player.dataset.seekingPlayer;

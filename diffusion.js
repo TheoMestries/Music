@@ -47,8 +47,11 @@ async function pollBroadcast() {
       showOfflineState("Lecture interrompue");
     });
   } catch (error) {
-    clearPlayers();
-    showOfflineState("Connexion interrompue");
+    if (diffusionState.lastState?.live) {
+      statusText.textContent = "Reconnexion à la diffusion…";
+    } else {
+      showOfflineState("Connexion interrompue");
+    }
   }
   window.setTimeout(pollBroadcast, 1500);
 }
@@ -67,17 +70,20 @@ async function applyBroadcastState(state, userRequestedPlay) {
   tracks.forEach((track) => {
     const key = getTrackKey(track);
     activeKeys.add(key);
+    const isNewPlayer = !diffusionState.players.has(key);
     const player = getOrCreatePlayer(key, track);
-    const expectedTime = getExpectedTime(track, state);
+    const positionRevision = track.positionRevision ?? "";
+    const positionChanged = player.dataset.positionRevision !== positionRevision;
 
     player.dataset.sourceVolume = String(normalizeVolume(track.volume));
     updatePlayerVolume(player);
 
-    if (Math.abs(player.currentTime - expectedTime) > 1.2) {
-      player.currentTime = expectedTime;
+    if (isNewPlayer || userRequestedPlay || positionChanged) {
+      player.currentTime = getExpectedTime(track, state);
+      player.dataset.positionRevision = positionRevision;
     }
 
-    if (diffusionState.enabledByUser || userRequestedPlay) {
+    if ((diffusionState.enabledByUser || userRequestedPlay) && !player.ended) {
       playPromises.push(player.play());
     }
   });
@@ -149,7 +155,10 @@ function updateStatus(tracks, state) {
 
   title.textContent = state.campaignName || "Campagne en direct";
 
-  const expectedTimes = tracks.map((track) => getExpectedTime(track, state));
+  const expectedTimes = tracks.map((track) => {
+    const player = diffusionState.players.get(getTrackKey(track));
+    return diffusionState.enabledByUser && player ? player.currentTime : getExpectedTime(track, state);
+  });
   timeLabel.textContent = formatTime(Math.max(0, ...expectedTimes));
 }
 
