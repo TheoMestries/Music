@@ -162,6 +162,21 @@ try {
     assertDiceTest(!in_array($gmRoll['id'], $playerIds, true) && in_array($playerGmRoll['id'], $gmIds, true), 'Les jets MJ sont réservés aux MJ et à leur auteur.');
     assertDiceTest(count(mapListCampaignDiceRolls(1, $player, 10, true)) === 3, 'L historique personnel contient uniquement les jets de son auteur.');
 
+    $large = mapCreateCampaignDiceRoll(1, '10000d6', 'normal', $player, 'secret', ['operator'=>'>=', 'target'=>4]);
+    $compactRolls = array_column(mapListCampaignDiceRolls(1, $player, compact: true), null, 'id');
+    $summary = $compactRolls[$large['id']];
+    assertDiceTest(!isset($summary['result']['terms']) && $summary['total'] === $large['total'], 'Le gros jet est résumé avec son total.');
+    assertDiceTest($summary['result']['success'] === $large['result']['success'], 'Le résumé conserve le seuil et le nombre de réussites.');
+    assertDiceTest(isset($compactRolls[$secret['id']]['result']['terms']), 'Les petits jets gardent leurs valeurs dans le chat.');
+    assertDiceTest(strlen(json_encode($summary)) < strlen(json_encode($large)) / 100, 'Le résumé réduit le volume du gros jet.');
+    assertDiceTest(mapGetCampaignDiceRoll(1, $large['id'], $player) === $large, 'Le détail restitue toutes les valeurs au lanceur.');
+    try {
+        mapGetCampaignDiceRoll(1, $large['id'], $gm);
+        throw new RuntimeException('Le MJ ne doit pas obtenir le détail d’un jet secret.');
+    } catch (MapHttpException $exception) {
+        assertDiceTest($exception->getStatusCode() === 404, 'Le détail ne révèle pas un jet secret du joueur.');
+    }
+
     try {
         mapListCampaignDiceRolls(1, $outsider);
         throw new RuntimeException('Un utilisateur externe ne doit pas voir l historique.');

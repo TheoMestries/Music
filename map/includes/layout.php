@@ -142,7 +142,7 @@ function mapRenderPageEnd(array $additionalScripts = []): void
         <script src="<?= mapEscape(mapUrl('/js/character-sheets.js?v=sheets-1')) ?>"></script>
         <script src="<?= mapEscape(mapUrl('/js/app.js?v=sus20-1')) ?>"></script>
         <?php foreach ($additionalScripts as $script): ?>
-          <script src="<?= mapEscape(mapUrl((string) $script) . '?v=table-timing-1') ?>"></script>
+          <script src="<?= mapEscape(mapUrl((string) $script) . '?v=table-chat-2') ?>"></script>
         <?php endforeach; ?>
       </body>
     </html>

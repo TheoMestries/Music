@@ -29,8 +29,8 @@ try {
     $stmt->execute([$campaignId]);
     $messages = $stmt->fetchAll();
     mapTableTimingMark('chat_messages');
-    $rolls = mapListCampaignDiceRolls($campaignId, $user, 60);
-    $history = mapListCampaignDiceRolls($campaignId, $user, 10, true);
+    $rolls = mapListCampaignDiceRolls($campaignId, $user, 60, compact: true);
+    $history = mapListCampaignDiceRolls($campaignId, $user, 10, ownOnly: true, compact: true);
     mapTableTimingMark('chat_rolls');
     mapJsonSuccess(['messages'=>$messages, 'rolls'=>$rolls, 'history'=>$history]);
 } catch (MapHttpException $error) {

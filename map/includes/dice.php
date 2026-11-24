@@ -640,11 +640,24 @@ function mapPublicDiceRollData(array $row): array
     ];
 }
 
-function mapListCampaignDiceRolls(int $campaignId, array $currentUser, int $limit = 50, bool $ownOnly = false): array
+function mapListCampaignDiceRolls(
+    int $campaignId,
+    array $currentUser,
+    int $limit = 50,
+    bool $ownOnly = false,
+    bool $compact = false,
+    ?int $rollId = null
+): array
 {
     $access = mapRequireCampaignAccess($campaignId, $currentUser);
     $limit = max(1, min($limit, 100));
     $pdo = mapGetDatabase();
+    // Keep ordinary rolls inline. Large results remain available by ID.
+    $resultColumn = $compact
+        ? "CASE WHEN length(r.result_json) <= 4096 THEN r.result_json
+             ELSE json_object('success', json_extract(r.result_json, '$.success')) END"
+        : 'r.result_json';
+    $rollFilter = $rollId === null ? '' : ' AND r.id = :roll_id';
     $statement = $pdo->prepare(
         'SELECT r.id,
                 r.campaign_id,
@@ -654,7 +667,7 @@ function mapListCampaignDiceRolls(int $campaignId, array $currentUser, int $limi
                 r.roll_mode,
                 r.visibility,
                 r.total,
-                r.result_json,
+                ' . $resultColumn . ' AS result_json,
                 r.random_source,
                 r.random_source_detail,
                 r.fallback_reason,
@@ -665,6 +678,7 @@ function mapListCampaignDiceRolls(int $campaignId, array $currentUser, int $limi
          INNER JOIN users AS roller ON roller.id = r.roller_user_id
          WHERE r.campaign_id = :campaign_id
            AND (r.roller_user_id = :viewer OR (:own_only = 0 AND (r.visibility = \'public\' OR (r.visibility = \'gm\' AND :gm = 1))))
+         ' . $rollFilter . '
          ORDER BY r.created_at DESC, r.id DESC
          LIMIT :limit'
     );
@@ -673,9 +687,17 @@ function mapListCampaignDiceRolls(int $campaignId, array $currentUser, int $limi
     $statement->bindValue(':own_only', (int) $ownOnly, PDO::PARAM_INT);
     $statement->bindValue(':gm', in_array($access['current_user_role'], ['admin','owner','gm'], true) ? 1 : 0, PDO::PARAM_INT);
     $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
+    if ($rollId !== null) $statement->bindValue(':roll_id', $rollId, PDO::PARAM_INT);
     $statement->execute();
 
     return array_map('mapPublicDiceRollData', $statement->fetchAll());
+}
+
+function mapGetCampaignDiceRoll(int $campaignId, int $rollId, array $currentUser): array
+{
+    $roll = mapListCampaignDiceRolls($campaignId, $currentUser, 1, rollId: $rollId)[0] ?? null;
+    if ($roll === null) mapThrowNotFound('Jet de dés introuvable.');
+    return $roll;
 }
 
 function mapCreateCampaignDiceRoll(
@@ -777,12 +799,5 @@ function mapCreateCampaignDiceRoll(
         throw $exception;
     }
 
-    $history = mapListCampaignDiceRolls($campaignId, $currentUser, 100, true);
-    foreach ($history as $roll) {
-        if ($roll['id'] === $rollId) {
-            return $roll;
-        }
-    }
-
-    throw new RuntimeException('Le lancer enregistre est introuvable.');
+    return mapGetCampaignDiceRoll($campaignId, $rollId, $currentUser);
 }

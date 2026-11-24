@@ -23,6 +23,10 @@ try {
     if ($method === 'GET') {
         session_write_close();
         $campaignId = mapValidatePositiveInt($_GET['campaignId'] ?? null, 'Identifiant de campagne');
+        if (isset($_GET['rollId'])) {
+            $rollId = mapValidatePositiveInt($_GET['rollId'], 'Identifiant du jet');
+            mapJsonSuccess(['roll' => mapGetCampaignDiceRoll($campaignId, $rollId, $currentUser)]);
+        }
         $limitInput = $_GET['limit'] ?? '50';
         $limit = mapValidatePositiveInt($limitInput, 'Limite d historique');
 

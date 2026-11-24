@@ -19,6 +19,7 @@
   const dice = [['4','D4'],['6','D6'],['8','D8'],['10','D10'],['12','D12'],['20','D20'],['100','D100'],['F','Fudge']];
   const visibilityNames = {public:'Tous',gm:'MJ',secret:'Secret'};
   let busy = false, requestVersion = 0, feedKey = '', historyKey = '', stopped = false;
+  let feedCards = new Map();
 
   function node(tag, text, className) {
     const element = document.createElement(tag);
@@ -32,16 +33,18 @@
     element.addEventListener('click',handler);
     return element;
   }
-  async function request(endpoint, payload) {
+  async function request(endpoint, payload, rollId) {
     const url = new URL(endpoint,location.href);
     url.searchParams.set('campaignId',campaignId);
+    if (rollId !== undefined) url.searchParams.set('rollId',rollId);
     const options = {cache:'no-store'};
     if (payload) {
       options.method = 'POST';
       options.headers = {'Content-Type':'application/json','X-CSRF-Token':root.dataset.csrfToken};
       options.body = JSON.stringify({campaignId,...payload});
     }
-    const label = endpoint === chat.dataset.diceApi ? 'dice.roll' : payload ? 'chat.send' : 'chat.refresh';
+    const label = rollId !== undefined ? 'dice.details'
+      : endpoint === chat.dataset.diceApi ? 'dice.roll' : payload ? 'chat.send' : 'chat.refresh';
     const {response, payload:result} = await diagnostics.json(label,url,options);
     if (!response.ok || !result.success) throw new Error(result.error || 'La requête a échoué.');
     return result.data;
@@ -116,7 +119,7 @@
     const card = node('article',undefined,'board-chat-roll');
     card.append(node('strong',roll.roller.displayName),node('span',visibilityNames[roll.visibility],'board-chat-audience'));
     card.append(node('div',roll.canonicalExpression,'board-chat-formula'));
-    for (const term of roll.result.terms) {
+    for (const term of roll.result.terms ?? []) {
       const row = node('div',undefined,'board-chat-dice-values');
       row.append(node('span',term.sign < 0 ? '−' : '+'));
       if (term.type === 'constant') row.append(node('span',String(term.value)));
@@ -128,6 +131,34 @@
       ? success.count+' réussite'+(success.count===1?'':'s')+' ('+success.operator+' '+success.target+') · Total '+roll.total
       : 'Total '+roll.total;
     card.append(node('strong',result,'board-chat-total'));
+    if (!roll.result.terms) {
+      const details = node('details');
+      details.append(node('summary','Détail du jet'));
+      const values = node('div');
+      details.append(values);
+      let loading = false;
+      let loaded = false;
+      details.addEventListener('toggle', async () => {
+        if (!details.open || loaded || loading) return;
+        loading = true;
+        values.textContent = 'Chargement…';
+        try {
+          const {roll: fullRoll} = await request(chat.dataset.diceApi, undefined, roll.id);
+          values.replaceChildren(...fullRoll.result.terms.map(term => {
+            const sign = term.sign < 0 ? '− ' : '+ ';
+            const text = term.type === 'constant' ? String(term.value)
+              : term.rolls.map(die => die.kept ? die.value : '(' + die.value + ')').join(', ');
+            return node('p',sign + text);
+          }));
+          loaded = true;
+        } catch (error) {
+          values.textContent = error.message;
+        } finally {
+          loading = false;
+        }
+      });
+      card.append(details);
+    }
     return card;
   }
   function renderFeed(data, follow) {
@@ -145,14 +176,19 @@
     const previousScroll = feed.scrollTop;
     feedKey = key;
     const fragment = document.createDocumentFragment();
+    const nextCards = new Map();
     for (const {item,kind} of entries) {
-      if (kind === 'roll') fragment.append(renderRoll(item));
-      else {
-        const card = node('article',undefined,'board-chat-message');
+      const id = kind + item.id;
+      let card = feedCards.get(id);
+      if (!card && kind === 'roll') card = renderRoll(item);
+      if (!card) {
+        card = node('article',undefined,'board-chat-message');
         card.append(node('strong',item.author),node('p',item.body));
-        fragment.append(card);
       }
+      nextCards.set(id,card);
+      fragment.append(card);
     }
+    feedCards = nextCards;
     if (!entries.length) fragment.append(node('p','Aucun message pour le moment.','muted'));
     feed.replaceChildren(fragment);
     feed.scrollTop = follow || atEnd ? feed.scrollHeight : previousScroll;
