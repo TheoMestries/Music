@@ -21,6 +21,7 @@ try {
     }
 
     if ($method === 'GET') {
+        session_write_close();
         $campaignId = mapValidatePositiveInt($_GET['campaignId'] ?? null, 'Identifiant de campagne');
         $limitInput = $_GET['limit'] ?? '50';
         $limit = mapValidatePositiveInt($limitInput, 'Limite d historique');

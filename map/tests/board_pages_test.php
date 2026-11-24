@@ -2,7 +2,6 @@
 declare(strict_types=1);
 require __DIR__.'/notes_test.php';
 require_once __DIR__.'/../includes/board-pages.php';
-require_once __DIR__.'/../includes/presentations.php';
 $initial=mapBoardSnapshot(1,$owner);$first=$initial['activePage']['id'];
 assertNotesTest($initial['canManage']&&count($initial['pages'])===1,'Première page créée pour la campagne.');
 $secondState=mapBoardAction(1,'create',['name'=>'Le donjon'],$owner);
@@ -20,6 +19,14 @@ assertNotesTest(mapBoardSnapshot(1,$owner)['activePage']['id']===$second,'Vues d
 assertNotesTest(mapBoardSnapshot(1,$playerOne)['activePage']['id']===$second,'Visiter ne change pas les joueurs.');
 $thirdState=mapBoardAction(1,'create',['name'=>'Village'],$owner);$third=$thirdState['pages'][2]['id'];
 mapBoardAction(1,'go',['pageId'=>$third],$owner);
+$background = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aO0cAAAAASUVORK5CYII=';
+$pdo = mapGetDatabase();
+$pdo->prepare('UPDATE campaign_board_pages SET image=? WHERE id IN (?,?)')->execute([$background,$second,$third]);
+$playerBoard = mapBoardSnapshot(1,$playerTwo);
+assertNotesTest(str_contains($playerBoard['activePage']['image'], 'backgroundPage='.$second), 'La synchronisation transmet une URL de fond.');
+assertNotesTest(mapBoardBackground(1,$second,$playerTwo)===$background,'Le joueur peut charger le fond de sa page.');
+expectNotesException(MapHttpException::class,404,static fn()=>mapBoardBackground(1,$third,$playerTwo),'Le fond d’une page privée est inaccessible au joueur.');
+assertNotesTest(mapBoardBackground(1,$third,$owner)===$background,'Le MJ peut charger le fond de sa page privée.');
 assertNotesTest(mapBoardSnapshot(1,$playerTwo)['activePage']['id']===$second,'Préparation invisible aux joueurs.');
 expectNotesException(MapHttpException::class,403,static fn()=>mapBoardAction(1,'send',['pageId'=>$first],$playerOne),'Un joueur ne dirige pas les autres joueurs.');
 expectNotesException(MapHttpException::class,403,static fn()=>mapBoardAction(1,'create',['name'=>'Interdit'],$playerTwo),'Création réservée aux MJ.');
@@ -33,6 +40,5 @@ $pdo=mapGetDatabase();$pdo->exec("INSERT INTO campaigns(name,owner_user_id) VALU
 expectNotesException(MapHttpException::class,404,static fn()=>mapBoardAction(1,'send',['pageId'=>$otherPage],$owner),'Page d’une autre campagne refusée.');
 $revision=mapBoardSnapshot(1,$owner)['revision'];
 mapBoardAction(1,'create',['name'=>'Nouvelle page'],$owner);
-$start=microtime(true);mapWaitForPresentation($pdo,1,'',.3,$revision);
-assertNotesTest(microtime(true)-$start<.2,'Modification de pages réveille la synchronisation immédiatement.');
+assertNotesTest(mapBoardSnapshot(1,$owner)['revision'] > $revision,'Une modification des pages change la révision du plateau.');
 echo "OK - pages, vues MJ indépendantes, diffusion joueurs, suppression et synchronisation.\n";

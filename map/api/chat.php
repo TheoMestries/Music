@@ -9,12 +9,13 @@ try {
     if (!in_array($method, ['GET', 'POST'], true)) mapJsonError('Méthode non autorisée.', 405);
     $user = mapGetCurrentUser();
     if ($user === null) mapJsonError('Authentification requise.', 401);
+    if ($method === 'POST') mapEnforceCsrfToken($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null);
+    session_write_close();
     $payload = $method === 'GET' ? $_GET : mapReadJsonBody(16384);
     $campaignId = mapValidatePositiveInt($payload['campaignId'] ?? null, 'Campagne');
     mapRequireCampaignAccess($campaignId, $user);
     $pdo = mapGetDatabase();
     if ($method === 'POST') {
-        mapEnforceCsrfToken($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null);
         $body = $payload['body'] ?? null;
         if (!is_string($body) || trim($body) === '' || mb_strlen($body) > 2000) {
             throw new DomainException('Écrivez un message de 1 à 2 000 caractères.');

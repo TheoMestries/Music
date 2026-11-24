@@ -54,21 +54,19 @@
  document.querySelector('#table-document')?.remove();
  // The last share at page render belongs to the previous viewing session.
  let last = root.dataset.initialPresentationId || null;
- let initialized = false;
  let stopped = false;
  const controller = new AbortController();
  window.addEventListener('pagehide', () => { stopped = true; controller.abort(); });
  window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
  async function poll() {
-  let retryDelay = 0;
+  let retryDelay = 750;
   try {
    const boardCursor = window.MapBoard?.revision ? '&afterBoard=' + window.MapBoard.revision : '';
-   const cursor = (initialized ? '&after=' + encodeURIComponent(last || '') : '') + boardCursor;
+   const cursor = '&after=' + encodeURIComponent(last || '') + boardCursor;
    const response = await fetch(root.dataset.presentationApi + '?campaignId=' + root.dataset.campaignId + cursor, {cache:'no-store', signal:controller.signal});
    if ([401,403,404].includes(response.status)) { stopped = true; return; }
    const payload = await response.json();
    if (!response.ok || !payload.success) throw new Error();
-   initialized = true;
    if (payload.data.board) window.MapBoard?.apply(payload.data.board);
    const doc = payload.data.presentation;
    if (doc && doc.event_id !== last) {

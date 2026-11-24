@@ -180,7 +180,7 @@
       if (version === requestVersion) chatStatus.textContent = error.message;
     }
   }
-  tab.addEventListener('click', () => refresh(true));
+  tab.addEventListener('click', () => { if (!busy) refresh(true); });
   chatForm.addEventListener('submit', async event => {
     event.preventDefault();
     const text = message.value.trim();

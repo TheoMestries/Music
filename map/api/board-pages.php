@@ -9,14 +9,17 @@ try{
     $payload=$method==='GET'?$_GET:mapReadJsonBody(3500000);
     $id=mapValidatePositiveInt($payload['campaignId']??null,'Campagne');
     if($method==='GET'){
+        session_write_close();
         $playerPreview = ($payload['playerPreview'] ?? null) === '1';
         if (isset($payload['tokenSettings'])) {
             $pageId = mapValidatePositiveInt($payload['pageId'] ?? null,'Page');
             $entityId = mapValidatePositiveInt($payload['tokenSettings'],'Jeton');
             mapJsonSuccess(['token'=>mapBoardTokenSettings($id,$pageId,$entityId,(string)($payload['layer'] ?? ''),$user)]);
         }
-        if (isset($payload['entityImage'])) {
-            $image = mapBoardEntityImage($id,mapValidatePositiveInt($payload['entityImage'],'Entité'),$user,$playerPreview);
+        if (isset($payload['entityImage']) || isset($payload['backgroundPage'])) {
+            $image = isset($payload['backgroundPage'])
+                ? mapBoardBackground($id,mapValidatePositiveInt($payload['backgroundPage'],'Page'),$user)
+                : mapBoardEntityImage($id,mapValidatePositiveInt($payload['entityImage'],'Entité'),$user,$playerPreview);
             if (!preg_match('~^data:(image/(?:png|jpeg|gif|webp));base64,([a-zA-Z0-9+/=]+)$~D', $image, $parts)) {
                 mapThrowNotFound('Image indisponible.');
             }
@@ -34,6 +37,8 @@ try{
     }
     mapEnforceCsrfToken($_SERVER['HTTP_X_CSRF_TOKEN']??null);
     $action = $payload['action'] ?? '';
+    $clipboard = $action === 'paste_entity' ? ($_SESSION['map_board_clipboard'][$user['user_id']][$id] ?? null) : null;
+    if ($action !== 'copy_entity') session_write_close();
     if (is_string($action) && str_starts_with($action,'turn_')) {
         mapJsonSuccess(['board'=>mapMutateBoardTurns($id,$action,$payload,$user)]);
     }
@@ -42,7 +47,6 @@ try{
         mapJsonSuccess(['copied'=>true]);
     }
     if ($action === 'paste_entity') {
-        $clipboard = $_SESSION['map_board_clipboard'][$user['user_id']][$id] ?? null;
         mapJsonSuccess(['board'=>mapMutateBoardEntity($id,$action,$payload,$user,$clipboard)]);
     }
     if ($action === 'ping') mapJsonSuccess(['board'=>mapPublishBoardPing($id,$payload,$user)]);

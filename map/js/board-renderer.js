@@ -161,6 +161,7 @@
     }
     function render(page, canManage = false, readOnly = false){
       const s={...defaults,...page.settings,crop:{...defaults.crop,...page.settings?.crop}};
+      const previousImage = world?.querySelector('.board-background-image');
       if (current?.id !== page.id) resetCamera();
       current={...page,settings:s};viewport.replaceChildren();viewport.classList.remove('board-has-image','without-grid');viewport.style.backgroundColor=s.boardColor;
       world=document.createElement('div');world.className='board-world';Object.assign(world.style,{width:s.width+'px',height:s.height+'px',backgroundColor:s.autoDominant&&page.image?s.dominantColor:s.backgroundColor});
@@ -170,7 +171,9 @@
       world.append(mapLayer);
       const clip=document.createElement('div');clip.className='board-page-clip';clip.style.overflow=s.cropOutside?'hidden':'visible';mapLayer.append(clip);
       if(page.image&&s.backgroundMode==='image'){
-        const image=document.createElement('img');image.src=page.image;image.alt=page.name;image.draggable=false;image.className='board-background-image';
+        const image = previousImage?.getAttribute('src') === page.image ? previousImage : document.createElement('img');
+        if (image !== previousImage) image.src = page.image;
+        image.alt=page.name;image.draggable=false;image.className='board-background-image';
         Object.assign(image.style,{left:(-s.crop.x/s.crop.w*100)+'%',top:(-s.crop.y/s.crop.h*100)+'%',width:(100/s.crop.w)+'%',height:(100/s.crop.h)+'%'});clip.append(image);
       }
       if(s.gridVisible){const layer=svg('svg',{width:s.width,height:s.height,viewBox:'0 0 '+s.width+' '+s.height,'aria-hidden':'true'});layer.classList.add('board-grid-layer');const {id,pattern}=gridPattern(s),defs=svg('defs');defs.append(pattern);layer.append(defs,svg('rect',{width:s.width,height:s.height,fill:'url(#'+id+')'}));mapLayer.append(layer);}

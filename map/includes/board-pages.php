@@ -27,14 +27,33 @@ function mapEnsureBoard(int $campaignId):void {
         $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
-function mapBoardPage(int $campaignId,int $pageId):array {
-    $stmt=mapGetDatabase()->prepare('SELECT id,name,image,thumbnail,settings,settings_revision FROM campaign_board_pages WHERE campaign_id=? AND id=?');$stmt->execute([$campaignId,$pageId]);$page=$stmt->fetch();
+function mapBoardPage(int $campaignId,int $pageId,bool $includeImage=true):array {
+    $imageFields = $includeImage ? 'image,thumbnail' : "(image <> '') AS image";
+    $stmt=mapGetDatabase()->prepare("SELECT id,name,$imageFields,settings,settings_revision FROM campaign_board_pages WHERE campaign_id=? AND id=?");$stmt->execute([$campaignId,$pageId]);$page=$stmt->fetch();
     if(!$page)mapThrowNotFound('Page introuvable.');
     $page['id']=(int)$page['id'];$page['settings']=array_replace(mapBoardSettingsDefaults(),json_decode($page['settings'],true)?:[]);$page['settingsRevision']=(int)$page['settings_revision'];unset($page['settings_revision']);return $page;
 }
+function mapBoardBackground(int $campaignId,int $pageId,array $user):string {
+    $access = mapRequireCampaignAccess($campaignId,$user);
+    $query = mapGetDatabase()->prepare(
+        'SELECT p.image FROM campaign_board_pages p
+        JOIN campaign_board_state s ON s.campaign_id = p.campaign_id
+        WHERE p.campaign_id = ? AND p.id = ? AND (CAST(? AS INTEGER) = 1 OR s.player_page_id = p.id)'
+    );
+    $query->execute([$campaignId,$pageId,(int) mapCanUseGmNotes($access)]);
+    $image = $query->fetchColumn();
+    if (!is_string($image) || $image === '') mapThrowNotFound('Image indisponible.');
+    return $image;
+}
 function mapEnsureBoardView(int $campaignId,array $user,array $access):void {
     if(!mapCanUseGmNotes($access))return;
-    $stmt=mapGetDatabase()->prepare('INSERT OR IGNORE INTO campaign_board_views(campaign_id,user_id,page_id) SELECT campaign_id,?,player_page_id FROM campaign_board_state WHERE campaign_id=?');
+    $pdo = mapGetDatabase();
+    $view = $pdo->prepare('SELECT 1 FROM campaign_board_views WHERE campaign_id=? AND user_id=?');
+    $view->execute([$campaignId,$user['user_id']]);
+    $exists = $view->fetchColumn() !== false;
+    $view->closeCursor();
+    if ($exists) return;
+    $stmt=$pdo->prepare('INSERT OR IGNORE INTO campaign_board_views(campaign_id,user_id,page_id) SELECT campaign_id,?,player_page_id FROM campaign_board_state WHERE campaign_id=?');
     $stmt->execute([$user['user_id'],$campaignId]);
 }
 function mapBoardSnapshot(int $campaignId,array $user,bool $playerPreview=false):array {
@@ -55,7 +74,12 @@ function mapBoardSnapshot(int $campaignId,array $user,bool $playerPreview=false)
             $list=$pdo->prepare('SELECT id,name,thumbnail,settings FROM campaign_board_pages WHERE campaign_id=? ORDER BY id');$list->execute([$campaignId]);
             $pages=array_map(static fn($p)=>['id'=>(int)$p['id'],'name'=>$p['name'],'thumbnail'=>$p['thumbnail'],'folder'=>(json_decode($p['settings'],true)['folder']??'')],$list->fetchAll());
         }
-        $page=mapBoardPage($campaignId,$selected);unset($page['thumbnail']);
+        $page=mapBoardPage($campaignId,$selected,false);
+        $page['image'] = $page['image'] ? mapUrlWithQuery('/api/board-pages.php', [
+            'campaignId' => $campaignId,
+            'backgroundPage' => $selected,
+            'revision' => $page['settingsRevision'],
+        ]) : '';
         $page['drawings'] = mapBoardDrawings($pdo, $selected, $viewer, $canManage);
         $page['entities'] = mapBoardEntities($pdo, $selected, $viewer, $access);
         $page['turns'] = mapBoardTurnSnapshot($pdo,$selected,$page['entities'],$canManage);
