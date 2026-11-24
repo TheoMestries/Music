@@ -693,7 +693,9 @@ function mapCreateCampaignDiceRoll(
         throw new DomainException('Seuil de réussite invalide.');
     }
     $parsedExpression = mapParseDiceExpression($expression, $mode);
+    mapTableTimingMark('dice_validation');
     $outcome = mapGenerateDiceOutcome($parsedExpression);
+    mapTableTimingMark('dice_randomness');
     $result = $outcome['result'];
     if ($success !== null) {
         $count = 0;
@@ -766,6 +768,7 @@ function mapCreateCampaignDiceRoll(
         $rollId = (int) $pdo->lastInsertId();
         mapTouchCampaign($pdo, $campaignId);
         $pdo->commit();
+        mapTableTimingMark('dice_write');
     } catch (Throwable $exception) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();

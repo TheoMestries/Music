@@ -182,7 +182,9 @@ function mapGetCurrentUser(): ?array
     }
 
     $resolved = true;
+    mapTableTimingMark('before_session');
     mapStartSession();
+    mapTableTimingMark('session');
     $sessionUser = $_SESSION[MAP_USER_SESSION_KEY] ?? null;
 
     if (
@@ -202,6 +204,7 @@ function mapGetCurrentUser(): ?array
     }
 
     $currentUser = mapSyncSessionUser($user);
+    mapTableTimingMark('user_lookup');
 
     return $currentUser;
 }

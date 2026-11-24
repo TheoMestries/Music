@@ -1,5 +1,6 @@
 (() => {
   const root=document.querySelector('#table-workspace');if(!root)return;
+  const diagnostics = window.MapTableDiagnostics;
   const toggle=root.querySelector('#board-pages-toggle'),menu=root.querySelector('#board-pages-menu');
   const list=root.querySelector('#board-pages-list'),menuStatus=root.querySelector('#board-menu-status');
   const grid=root.querySelector('#table-grid'),title=root.querySelector('#board-page-name'),status=root.querySelector('#board-display-status');
@@ -49,8 +50,7 @@
     url.searchParams.set('playerPreview','1');
     const status = playerPreview.querySelector('[data-preview-status]');
     try {
-      const response = await fetch(url,{signal:controller.signal,cache:'no-store'});
-      const result = await response.json();
+      const {response, payload:result} = await diagnostics.json('board.preview',url,{signal:controller.signal,cache:'no-store'});
       if (!response.ok || !result.success) throw new Error(result.error || 'Aperçu indisponible.');
       if (!playerPreview.open || controller.signal.aborted) return;
       const {activePage,revision} = result.data.board;
@@ -167,9 +167,10 @@
     if(busy)throw new Error('Une action est déjà en cours.');
     busy=true;renderMenu();
     try{
-      const response=await fetch(root.dataset.boardApi,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':root.dataset.csrfToken},body:JSON.stringify({action,campaignId:Number(root.dataset.campaignId),...payload})});
-      const result=await response.json();if(!response.ok||!result.success)throw new Error(result.error||'Action impossible.');
-      if (result.data.board) apply(result.data.board,true);
+      const label = action === 'draw' ? 'board.draw.' + payload.drawing.type : 'board.' + action;
+      const {response, payload:result} = await diagnostics.json(label,root.dataset.boardApi,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':root.dataset.csrfToken},body:JSON.stringify({action,campaignId:Number(root.dataset.campaignId),...payload})});
+      if(!response.ok||!result.success)throw new Error(result.error||'Action impossible.');
+      if (result.data.board) diagnostics.measure(label, () => apply(result.data.board,true), {revision:result.data.board.revision});
       return result.data.board;
     }finally{busy=false;renderMenu();}
   }

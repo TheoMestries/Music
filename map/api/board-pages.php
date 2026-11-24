@@ -7,6 +7,7 @@ try{
     $method=$_SERVER['REQUEST_METHOD']??'GET';
     if(!in_array($method,['GET','POST'],true))mapJsonError('Méthode non autorisée.',405);
     $payload=$method==='GET'?$_GET:mapReadJsonBody(3500000);
+    mapTableTimingMark('board_request');
     $id=mapValidatePositiveInt($payload['campaignId']??null,'Campagne');
     if($method==='GET'){
         session_write_close();

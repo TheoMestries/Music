@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/table-timing.php';
+
 const MAP_MIGRATIONS_DIRECTORY = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'migrations';
 
 function mapDatabasePath(): string
@@ -36,7 +38,9 @@ function mapGetDatabase(): PDO
         return $pdo;
     }
 
+    mapTableTimingMark('before_db');
     $pdo = mapOpenDatabase(mapDatabasePath());
+    mapTableTimingMark('db_open');
 
     return $pdo;
 }

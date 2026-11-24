@@ -33,6 +33,7 @@ try {
 
     mapEnforceCsrfToken(isset($_SERVER['HTTP_X_CSRF_TOKEN']) ? (string) $_SERVER['HTTP_X_CSRF_TOKEN'] : null);
     $payload = mapReadJsonBody(16384);
+    mapTableTimingMark('dice_request');
 
     if ((string) ($payload['action'] ?? '') !== 'roll') {
         mapJsonError('Action inconnue.', 404);

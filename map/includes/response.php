@@ -1,12 +1,18 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/table-timing.php';
+
 function mapSendJson(array $payload, int $statusCode = 200): never
 {
     http_response_code($statusCode);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    mapTableTimingMark('response_prepare');
+    $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    mapTableTimingMark('json');
+    mapSendTableTiming();
+    echo $json;
     exit;
 }
 

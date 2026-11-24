@@ -87,10 +87,12 @@ function mapMutateBoardDrawing(int $campaignId, string $action, array $payload, 
     if (!$canManage && $layer !== 'players') mapThrowForbidden('Ce calque est réservé au MJ.');
     $pageId = mapValidatePositiveInt($payload['pageId'] ?? null, 'Page');
     $pdo = mapGetDatabase();
+    mapTableTimingMark('draw_validation');
     try {
         $pdo->beginTransaction();
         $lock = $pdo->prepare('UPDATE campaign_board_state SET revision=revision WHERE campaign_id=?');
         $lock->execute([$campaignId]);
+        mapTableTimingMark('draw_write_lock');
         $page = mapBoardPage($campaignId, $pageId);
         $state = $pdo->prepare('SELECT player_page_id FROM campaign_board_state WHERE campaign_id=?');
         $state->execute([$campaignId]);
@@ -131,6 +133,7 @@ function mapMutateBoardDrawing(int $campaignId, string $action, array $payload, 
             $update->execute([$campaignId]);
         }
         $pdo->commit();
+        mapTableTimingMark('draw_write');
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;

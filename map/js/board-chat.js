@@ -2,6 +2,7 @@
   const root = document.querySelector('#table-workspace');
   const chat = root?.querySelector('#panel-chat');
   if (!chat) return;
+  const diagnostics = window.MapTableDiagnostics;
   const campaignId = Number(root.dataset.campaignId);
   const tab = root.querySelector('#tab-chat');
   const toggle = root.querySelector('#board-dice-toggle');
@@ -40,8 +41,8 @@
       options.headers = {'Content-Type':'application/json','X-CSRF-Token':root.dataset.csrfToken};
       options.body = JSON.stringify({campaignId,...payload});
     }
-    const response = await fetch(url,options);
-    const result = await response.json();
+    const label = endpoint === chat.dataset.diceApi ? 'dice.roll' : payload ? 'chat.send' : 'chat.refresh';
+    const {response, payload:result} = await diagnostics.json(label,url,options);
     if (!response.ok || !result.success) throw new Error(result.error || 'La requête a échoué.');
     return result.data;
   }
@@ -174,8 +175,10 @@
     try {
       const data = await request(chat.dataset.chatApi);
       if (version !== requestVersion) return;
-      renderFeed(data,follow);
-      renderHistory(data.history);
+      diagnostics.measure('chat.refresh', () => {
+        renderFeed(data,follow);
+        renderHistory(data.history);
+      });
     } catch (error) {
       if (version === requestVersion) chatStatus.textContent = error.message;
     }

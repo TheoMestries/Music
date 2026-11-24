@@ -27,8 +27,12 @@ try {
     $stmt = $pdo->prepare('SELECT m.id,m.body,m.created_at AS createdAt,u.display_name AS author
         FROM campaign_chat m JOIN users u ON u.id=m.author_id WHERE m.campaign_id=? ORDER BY m.id DESC LIMIT 60');
     $stmt->execute([$campaignId]);
-    mapJsonSuccess(['messages'=>$stmt->fetchAll(), 'rolls'=>mapListCampaignDiceRolls($campaignId, $user, 60),
-        'history'=>mapListCampaignDiceRolls($campaignId, $user, 10, true)]);
+    $messages = $stmt->fetchAll();
+    mapTableTimingMark('chat_messages');
+    $rolls = mapListCampaignDiceRolls($campaignId, $user, 60);
+    $history = mapListCampaignDiceRolls($campaignId, $user, 10, true);
+    mapTableTimingMark('chat_rolls');
+    mapJsonSuccess(['messages'=>$messages, 'rolls'=>$rolls, 'history'=>$history]);
 } catch (MapHttpException $error) {
     mapJsonError($error->getMessage(), $error->getStatusCode());
 } catch (DomainException $error) {

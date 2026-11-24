@@ -12,6 +12,7 @@ $presentationCursor->closeCursor();
     <section class="table-stage" aria-label="Plateau de jeu">
       <div class="table-stage-controls">
         <span id="board-page-name"></span>
+        <button type="button" id="table-diagnostics-toggle" class="button button-secondary button-small" hidden>Démarrer le diagnostic</button>
         <?php if (mapCanUseGmNotes($access)): ?>
         <button id="board-player-preview-toggle" type="button" class="button button-secondary button-small" aria-haspopup="dialog" aria-controls="board-player-preview" title="Aperçu joueur">Aperçu joueur</button>
         <button id="board-pages-toggle" type="button" class="button button-secondary button-small" aria-expanded="false" aria-controls="board-pages-menu" title="Gérer les pages du plateau"><span aria-hidden="true">▣</span> Pages <span aria-hidden="true">▾</span></button>

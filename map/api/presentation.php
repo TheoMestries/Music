@@ -29,6 +29,7 @@ try {
  $afterBoard = isset($_GET['afterBoard']) ? mapValidatePositiveInt($_GET['afterBoard'], 'Révision du plateau') : null;
  $presentation = mapReadPresentation($pdo, $id, $after);
  $version = $pdo->prepare('SELECT revision FROM campaign_board_state WHERE campaign_id=?');$version->execute([$id]);$boardRevision=(int)$version->fetchColumn();$version->closeCursor();
+ mapTableTimingMark('sync_lookup');
  $board = $afterBoard === null || $afterBoard !== $boardRevision ? mapBoardSnapshot($id, $user) : null;
  mapJsonSuccess(['presentation' => $presentation, 'board' => $board]);
 } catch (MapHttpException $e) { mapJsonError($e->getMessage(), $e->getStatusCode());

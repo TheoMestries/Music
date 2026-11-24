@@ -63,11 +63,11 @@
   try {
    const boardCursor = window.MapBoard?.revision ? '&afterBoard=' + window.MapBoard.revision : '';
    const cursor = '&after=' + encodeURIComponent(last || '') + boardCursor;
-   const response = await fetch(root.dataset.presentationApi + '?campaignId=' + root.dataset.campaignId + cursor, {cache:'no-store', signal:controller.signal});
+   const diagnostics = window.MapTableDiagnostics;
+   const {response, payload} = await diagnostics.json('board.sync',root.dataset.presentationApi + '?campaignId=' + root.dataset.campaignId + cursor, {cache:'no-store', signal:controller.signal});
    if ([401,403,404].includes(response.status)) { stopped = true; return; }
-   const payload = await response.json();
    if (!response.ok || !payload.success) throw new Error();
-   if (payload.data.board) window.MapBoard?.apply(payload.data.board);
+   if (payload.data.board) diagnostics.measure('board.sync', () => window.MapBoard?.apply(payload.data.board), {revision:payload.data.board.revision});
    const doc = payload.data.presentation;
    if (doc && doc.event_id !== last) {
     last = doc.event_id;

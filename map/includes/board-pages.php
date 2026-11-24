@@ -57,6 +57,7 @@ function mapEnsureBoardView(int $campaignId,array $user,array $access):void {
     $stmt->execute([$user['user_id'],$campaignId]);
 }
 function mapBoardSnapshot(int $campaignId,array $user,bool $playerPreview=false):array {
+    mapTableTimingMark('before_snapshot');
     $access=mapRequireCampaignAccess($campaignId,$user);mapEnsureBoard($campaignId);$pdo=mapGetDatabase();
     if ($playerPreview && !mapCanUseGmNotes($access)) mapThrowForbidden('L’aperçu joueur est réservé au MJ.');
     if (!$playerPreview) mapEnsureBoardView($campaignId,$user,$access);
@@ -87,6 +88,7 @@ function mapBoardSnapshot(int $campaignId,array $user,bool $playerPreview=false)
         $page['pings'] = mapBoardPings($pdo,$selected);
         $page['history'] = mapBoardHistoryAvailability($pdo,$selected,(int)$viewer['user_id'],$canManage);
         $pdo->commit();
+        mapTableTimingMark('snapshot');
         return ['revision'=>(int)$state['revision'],'canManage'=>$canManage,'playerPageId'=>(int)$state['player_page_id'],'participantColor'=>$color,'activePage'=>$page,'pages'=>$pages];
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }

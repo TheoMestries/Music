@@ -21,7 +21,7 @@ try {
         $members = mapGetCampaignMembers($campaignId);
         mapRenderPageStart($campaign['name'],$currentUser,'campaigns',isTable:true);
         require __DIR__.'/includes/table-workspace.php';
-        mapRenderPageEnd(['/js/board-renderer.js','/js/board-navigation.js','/js/board-settings.js','/js/board-alignment.js','/js/board-drawing-tools.js','/js/board-measure-tools.js','/js/board-entity-tools.js','/js/board-token-tools.js','/js/board-selection-tools.js','/js/board-context-menu.js','/js/board-turns.js','/js/board-pages.js','/js/table-workspace.js','/js/board-chat.js']);
+        mapRenderPageEnd(['/js/table-diagnostics.js','/js/board-renderer.js','/js/board-navigation.js','/js/board-settings.js','/js/board-alignment.js','/js/board-drawing-tools.js','/js/board-measure-tools.js','/js/board-entity-tools.js','/js/board-token-tools.js','/js/board-selection-tools.js','/js/board-context-menu.js','/js/board-turns.js','/js/board-pages.js','/js/table-workspace.js','/js/board-chat.js']);
         return;
     }
 
