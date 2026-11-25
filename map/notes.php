@@ -150,7 +150,7 @@ try {
       </section>
     </section>
     <?php
-    mapRenderPageEnd(['/js/notes.js']);
+    mapRenderPageEnd(['/js/notes.js'], 'notes-3');
 } catch (Throwable $exception) {
     mapRenderExceptionPage($exception, 'map/notes', $currentUser);
 }

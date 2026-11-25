@@ -133,16 +133,16 @@ function mapRenderPageStart(string $title, array $currentUser, string $activeNav
     <?php
 }
 
-function mapRenderPageEnd(array $additionalScripts = []): void
+function mapRenderPageEnd(array $additionalScripts = [], string $scriptVersion = 'table-chat-2'): void
 {
     ?>
           </main>
         </div>
         <script src="<?= mapEscape(mapUrl('/js/windows.js?v=3')) ?>"></script>
-        <script src="<?= mapEscape(mapUrl('/js/character-sheets.js?v=sheets-1')) ?>"></script>
+        <script src="<?= mapEscape(mapUrl('/js/character-sheets.js?v=sheets-3')) ?>"></script>
         <script src="<?= mapEscape(mapUrl('/js/app.js?v=sus20-1')) ?>"></script>
         <?php foreach ($additionalScripts as $script): ?>
-          <script src="<?= mapEscape(mapUrl((string) $script) . '?v=table-chat-2') ?>"></script>
+          <script src="<?= mapEscape(mapUrl((string) $script) . '?v=' . $scriptVersion) ?>"></script>
         <?php endforeach; ?>
       </body>
     </html>

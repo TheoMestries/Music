@@ -317,7 +317,8 @@ function mapCreateCampaignNote(
     mixed $tags,
     string $visibility,
     array $currentUser,
-    string $type = 'document'
+    string $type = 'document',
+    ?array $options = null
 ): array {
     if (!in_array($type, ['document', 'character'], true)) throw new DomainException('Type de document invalide.');
     $access = mapRequireCampaignAccess($campaignId, $currentUser);
@@ -327,6 +328,15 @@ function mapCreateCampaignNote(
     $tags = mapNormalizeNoteTags($tags);
     $visibility = mapValidateNoteVisibility($visibility);
     mapAssertNoteVisibilityAllowed($visibility, $access, $currentUser);
+    $validatedOptions = ['type' => $type];
+    if ($options !== null) {
+        $validatedOptions = mapValidateDocumentOptions($options, [
+            'campaign_id' => $campaignId,
+            'author_user_id' => $currentUser['user_id'],
+            'options' => json_encode($validatedOptions, JSON_THROW_ON_ERROR),
+        ], $access, $currentUser);
+        if ($validatedOptions['rich']) $content = mapDocumentHtml($content);
+    }
     $pdo = mapGetDatabase();
 
     try {
@@ -341,7 +351,7 @@ function mapCreateCampaignNote(
         $statement->execute([
             ':campaign_id' => $campaignId,
             ':author_user_id' => (int) $currentUser['user_id'],
-            ':options' => json_encode(['type' => $type], JSON_THROW_ON_ERROR),
+            ':options' => json_encode($validatedOptions, JSON_THROW_ON_ERROR),
             ':title' => $title,
             ':content' => $content,
             ':folder' => $folder,

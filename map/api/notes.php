@@ -49,6 +49,9 @@ try {
     $campaignId = mapValidatePositiveInt($payload['campaignId'] ?? null, 'Identifiant de campagne');
 
     if ($action === 'create') {
+        if (isset($payload['options']) && !is_array($payload['options'])) {
+            throw new DomainException('Options de document invalides.');
+        }
         $note = mapCreateCampaignNote(
             $campaignId,
             (string) ($payload['title'] ?? 'Nouvelle note'),
@@ -57,7 +60,8 @@ try {
             $payload['tags'] ?? [],
             (string) ($payload['visibility'] ?? 'personal'),
             $currentUser,
-            (string) ($payload['type'] ?? 'document')
+            (string) ($payload['type'] ?? 'document'),
+            $payload['options'] ?? null
         );
 
         mapJsonSuccess(['note' => $note], 201);

@@ -10,12 +10,30 @@ try {
     $campaignId=mapValidatePositiveInt($payload['campaignId']??null,'Campagne');
     $access=mapRequireCampaignAccess($campaignId,$user);
     if ($method==='GET') {
+        if (isset($payload['templateId'])) {
+            $id = mapValidatePositiveInt($payload['templateId'], 'Modèle');
+            mapJsonSuccess(['template' => mapSheetTemplate($campaignId, $id, $user)]);
+        }
         $noteId=mapValidatePositiveInt($payload['noteId']??null,'Personnage');
         $note=mapSheetCharacter($campaignId,$noteId,$user);
         mapJsonSuccess(['sheet'=>mapGetCharacterSheet($campaignId,$noteId,$user),'templates'=>mapSheetTemplates($campaignId,$user),'canManage'=>mapCanUseGmNotes($access)&&$note['canEdit'],'canEdit'=>$note['canEdit']]);
     }
     mapEnforceCsrfToken($_SERVER['HTTP_X_CSRF_TOKEN']??null);
     $action=$payload['action']??'';
+    if (in_array($action, ['copy_template', 'update_template', 'delete_template'], true)) {
+        $id = mapValidatePositiveInt($payload['templateId'] ?? null, 'Modèle');
+        if ($action === 'copy_template') {
+            mapJsonSuccess(['template' => mapCopySheetTemplate($campaignId, $id, $user)], 201);
+        }
+        if ($action === 'delete_template') {
+            mapDeleteSheetTemplate($campaignId, $id, $user);
+            mapJsonSuccess();
+        }
+        if (!is_array($payload['pages'] ?? null) || !is_array($payload['fields'] ?? null)) {
+            throw new DomainException('Modèle incomplet.');
+        }
+        mapJsonSuccess(['template' => mapUpdateSheetTemplate($campaignId, $id, (string)($payload['name'] ?? ''), $payload['pages'], $payload['fields'], $user)]);
+    }
     if ($action==='create_template') {
         if (!is_array($payload['pages']??null)||!is_array($payload['fields']??null)) throw new DomainException('Modèle incomplet.');
         mapJsonSuccess(['template'=>mapCreateSheetTemplate($campaignId,(string)($payload['name']??''),$payload['pages'],$payload['fields'],$user)],201);

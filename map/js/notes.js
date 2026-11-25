@@ -5,6 +5,8 @@
   const state = {
     notes: [], folders: [],
     activeNoteId: null,
+    draft: null,
+    savingDraft: false,
     saveTimer: null,
     savePromise: null,
     dirtyNoteIds: new Set(),
@@ -107,9 +109,7 @@
       setSaveStatus('Choisissez une image de jeton PNG, JPEG, GIF ou WebP de 2 Mo maximum.','error');return;
     }
     const id=note.id;
-    const value=await new Promise((resolve,reject)=>{
-      const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);
-    });
+    const value=await readEditorImage(file);
     if(getActiveNote()?.id!==id)return;
     displayToken(value);handleEditorChange({target:tokenInput});
   }
@@ -164,16 +164,27 @@
     imagePreview.hidden = !value;
     if (value) imagePreview.src = value; else imagePreview.removeAttribute('src');
   }
+  async function readEditorImage(file) {
+    const draft = state.draft;
+    if (draft) draft.pendingImages++;
+    try {
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    } finally {
+      if (draft) draft.pendingImages--;
+    }
+  }
   async function readImage(file) {
     if (!file || !getActiveNote()?.canEdit) return;
     if (!['image/png','image/jpeg','image/gif','image/webp'].includes(file.type) || file.size > 2097152) {
       setSaveStatus('Choisissez une image PNG, JPEG, GIF ou WebP de 2 Mo maximum.', 'error'); return;
     }
     const noteId = state.activeNoteId;
-    const value = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file);
-    });
+    const value = await readEditorImage(file);
     if (state.activeNoteId !== noteId) return;
     displayImage(value); handleEditorChange({target:imageInput});
   }
@@ -254,12 +265,20 @@
   actions.append(sheetButton,share,edit); reading.append(actions);
   const readingContent=modalHost.createElement('div'); reading.append(readingContent);
   const back=modalHost.createElement('button'); back.type='button'; back.className='button button-secondary'; back.textContent='Terminer et lire';
-  back.addEventListener('click',async()=>{await flushPendingSave();if(!state.dirtyNoteIds.size)openDocumentDialog(false);});
+  back.addEventListener('click',async()=>{
+    if (state.draft) {
+      await saveDraft();
+      return;
+    }
+    await flushPendingSave();
+    if(!state.dirtyNoteIds.size)openDocumentDialog(false);
+  });
   floating.body.append(reading,back,editorSection);
   function openDocumentDialog(editing=false) {
     const note=getActiveNote(); if(!note)return;
     floating.body.replaceChildren(reading,back,editorSection);
     editing=editing && note.canEdit;
+    back.textContent=state.draft?'Enregistrer':'Terminer et lire';
     floating.label.textContent=note.title;
     editorSection.hidden=!editing; back.hidden=!editing; reading.hidden=editing;
     edit.hidden=!note.canEdit;
@@ -280,6 +299,12 @@
   }
   async function closeEditor(event) {
     event?.preventDefault();
+    if (state.draft) {
+      if (state.savingDraft) return;
+      if (state.dirtyNoteIds.has(state.draft.id) && !hostWindow.confirm('Abandonner le brouillon ?')) return;
+      discardDraft();
+      return;
+    }
     await flushPendingSave();
     if (state.dirtyNoteIds.size) {
       setSaveStatus('Enregistrement incomplet. Corrigez le problème avant de fermer.', 'error');
@@ -389,11 +414,11 @@
       renderFolderChoices();
       renderNotesList();
 
-      if (!background) showEmptyEditor();
+      if (!background && !state.draft) showEmptyEditor();
     } catch (error) {
       if (background) return;
       setListStatus(error.message, true);
-      showEmptyEditor('Impossible de charger les notes.');
+      if (!state.draft) showEmptyEditor('Impossible de charger les notes.');
       if(requestedDocument){floating.body.textContent=error.message;floating.open();}
     } finally {
       libraryLoading = false;
@@ -448,35 +473,83 @@
     return payload;
   }
 
-  async function createNote(folderName = null, type = 'document') {
+  function createNote(folderName = null, type = 'document') {
+    if (state.draft) {
+      floating.open();
+      return;
+    }
     if (typeof folderName !== 'string') folderName=null;
-    createButton.disabled = true;
-    await flushPendingSave();
+    state.draft = {
+      id: Symbol('draft'),
+      title: type === 'character' ? 'Nouveau personnage' : 'Nouveau document',
+      content: '',
+      folder: folderName,
+      tags: [],
+      visibility: 'personal',
+      options: {type, rich: true},
+      canEdit: true,
+      canManagePermissions: true,
+      canDelete: false,
+      pendingImages: 0,
+    };
+    state.activeNoteId = state.draft.id;
+    populateEditor(state.draft);
+    openDocumentDialog(true);
+  }
 
+  function discardDraft() {
+    state.dirtyNoteIds.delete(state.draft.id);
+    state.draft = null;
+    showEmptyEditor();
+  }
+
+  async function saveDraft() {
+    const draft = state.draft;
+    if (!draft || state.savingDraft) return;
+    if (!draft.title.trim()) {
+      setSaveStatus('Le titre est obligatoire.', 'error');
+      return;
+    }
+    if (draft.pendingImages) {
+      setSaveStatus('Attendez la fin du chargement des images.', 'pending');
+      return;
+    }
+    state.savingDraft = true;
+    back.disabled = true;
+    editorForm.inert = true;
+    setSaveStatus('Enregistrement…', 'pending');
+    let savedNote;
     try {
       const payload = await apiRequest('POST', {
         action: 'create',
         campaignId,
-        title: type === 'character' ? 'Nouveau personnage' : 'Nouveau document',
-        type,
-        content: '',
-        folder: folderName,
-        tags: [],
-        visibility: 'personal',
+        title: draft.title,
+        type: draft.options.type,
+        content: draft.content,
+        options: draft.options,
+        folder: draft.folder,
+        tags: draft.tags,
+        visibility: draft.visibility,
       });
-      state.notes.unshift(payload.data.note);
-      renderFolderChoices();
-      renderNotesList();
-      openIndependentNote(payload.data.note.id, true);
+      savedNote = payload.data.note;
     } catch (error) {
-      setListStatus(error.message, true);
+      setSaveStatus(error.message, 'error');
     } finally {
-      createButton.disabled = false;
+      state.savingDraft = false;
+      back.disabled = false;
+      editorForm.inert = false;
     }
+    if (!savedNote) return;
+    discardDraft();
+    state.notes.unshift(savedNote);
+    renderFolderChoices();
+    renderNotesList();
+    openIndependentNote(savedNote.id);
+    hostWindow.dispatchEvent(new hostWindow.CustomEvent('map-notes-changed',{detail:{campaignId}}));
   }
 
   function getActiveNote() {
-    return state.notes.find((note) => note.id === state.activeNoteId) ?? null;
+    return state.draft ?? state.notes.find((note) => note.id === state.activeNoteId) ?? null;
   }
 
   function selectNote(noteId) {
@@ -520,19 +593,23 @@
       box.contentEditable = note.canEdit ? 'true' : 'false';
     });
     displayImage(options.image || '');
+    imageInput.value = '';
     imageInput.disabled = removeImage.disabled = !note.canEdit;
-    authorLabel.textContent = `Auteur : ${note.author.displayName} · Mise a jour : ${formatDate(note.updatedAt)}`;
+    authorLabel.textContent = state.draft ? '' : `Auteur : ${note.author.displayName} · Mise a jour : ${formatDate(note.updatedAt)}`;
 
     [titleInput, tagsInput, contentInput].forEach((field) => {
       field.readOnly = !note.canEdit;
     });
 
     deleteButton.disabled = !note.canDelete;
+    deleteButton.hidden = Boolean(state.draft);
 
     const conflict = state.conflicts.get(note.id);
     conflictNotice.classList.toggle('hidden', !conflict);
 
-    if (conflict) {
+    if (state.draft) {
+      setSaveStatus('Brouillon non enregistré.', 'pending');
+    } else if (conflict) {
       setSaveStatus('Conflit de sauvegarde.', 'error');
     } else if (state.dirtyNoteIds.has(note.id)) {
       setSaveStatus('Modifications non enregistrees...', 'pending');
@@ -570,6 +647,10 @@
       type:note.options?.type || 'document', tokenImage
     };
     state.dirtyNoteIds.add(note.id);
+    if (note === state.draft) {
+      setSaveStatus('Brouillon non enregistré.', 'pending');
+      return;
+    }
     state.editVersions.set(note.id, (state.editVersions.get(note.id) ?? 0) + 1);
     setSaveStatus('Modifications non enregistrees...', 'pending');
     renderFolderChoices();
@@ -598,6 +679,7 @@
   }
 
   async function flushPendingSave() {
+    if (state.draft) return;
     window.clearTimeout(state.saveTimer);
 
     if (state.savePromise) {
@@ -610,6 +692,7 @@
   }
 
   async function saveActiveNote() {
+    if (state.draft) return;
     const note = getActiveNote();
     if (!note || !note.canEdit || !state.dirtyNoteIds.has(note.id) || state.conflicts.has(note.id)) return;
 

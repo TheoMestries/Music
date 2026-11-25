@@ -29,4 +29,35 @@ expectNotesException(MapHttpException::class,404,static fn()=>mapSheetTemplate($
 $new=mapCreateSheetTemplate(1,'Autre modèle',[$avatar],$fields,$owner);
 $reassigned=mapAssignCharacterSheet(1,$character['id'],$new['id'],$owner);
 assertNotesTest(!isset($reassigned['values']->name),'Changer de modèle remet la fiche à zéro.');
+
+expectNotesException(MapHttpException::class,403,static fn()=>mapUpdateSheetTemplate(1,$new['id'],'Interdit',[$avatar],$fields,$playerOne),'Seul le créateur modifie le modèle.');
+expectNotesException(MapHttpException::class,403,static fn()=>mapDeleteSheetTemplate(1,$new['id'],$playerOne),'Seul le créateur supprime le modèle.');
+$copy = mapCopySheetTemplate(1, $new['id'], $playerOne);
+assertNotesTest($copy['id'] !== $new['id'] && $copy['fields'] === $new['fields'] && $copy['pages'] === $new['pages'], 'La copie reprend les pages et les zones.');
+$list = array_column(mapSheetTemplates(1, $playerOne), null, 'id');
+assertNotesTest($list[$copy['id']]['isOwner'] && !$list[$new['id']]['isOwner'], 'Les droits suivent le créateur de chaque modèle.');
+mapUpdateSheetTemplate(1, $copy['id'], 'Ma fiche', [$avatar], $fields, $playerOne);
+assertNotesTest(mapSheetTemplate(1, $new['id'], $owner)['name'] === $new['name'], 'Modifier la copie conserve le modèle original.');
+mapDeleteSheetTemplate(1, $copy['id'], $playerOne);
+
+$revision = $reassigned['revision'];
+mapSaveCharacterSheet(1, $character['id'], $revision, ['name' => 'Personnage'], $owner);
+$renamed = $fields;
+$renamed[0]['label'] = 'Prénom';
+mapUpdateSheetTemplate(1, $new['id'], 'Modèle modifié', [$avatar], $renamed, $owner);
+$updated = mapGetCharacterSheet(1, $character['id'], $owner);
+assertNotesTest($updated['values']->name === 'Personnage' && $updated['revision'] === $revision + 2, 'Modifier le modèle conserve les valeurs des zones existantes et actualise la révision.');
+$renamed[0]['id'] = 'first_name';
+mapUpdateSheetTemplate(1, $new['id'], 'Modèle modifié', [$avatar], $renamed, $owner);
+$updated = mapGetCharacterSheet(1, $character['id'], $owner);
+assertNotesTest(!isset($updated['values']->name), 'Les zones supprimées ne laissent pas de valeurs impossibles à enregistrer.');
+mapSaveCharacterSheet(1, $character['id'], $updated['revision'], ['first_name' => 'Ham'], $owner);
+
+$pdo->prepare('UPDATE campaigns SET default_sheet_template_id=? WHERE id=1')->execute([$new['id']]);
+mapDeleteSheetTemplate(1, $new['id'], $owner);
+assertNotesTest($pdo->query('SELECT default_sheet_template_id FROM campaigns WHERE id=1')->fetchColumn() === null, 'Le modèle supprimé cesse d’être le modèle par défaut.');
+assertNotesTest(!in_array($new['id'],array_column(mapSheetTemplates(1,$owner),'id'),true),'Le modèle supprimé disparaît du sélecteur.');
+expectNotesException(MapHttpException::class,404,static fn()=>mapCopySheetTemplate(1,$new['id'],$playerOne),'Un modèle supprimé ne peut plus être copié.');
+expectNotesException(MapHttpException::class,404,static fn()=>mapAssignCharacterSheet(1,$otherCampaign['id'],$new['id'],$owner),'Un modèle supprimé ne peut plus être attribué.');
+assertNotesTest(mapGetCharacterSheet(1,$character['id'],$owner)['values']->first_name === 'Ham','La fiche attribuée conserve ses valeurs après la suppression du modèle.');
 echo "OK - modèles, zones, fiches indépendantes, permissions, conflits et isolation.\n";

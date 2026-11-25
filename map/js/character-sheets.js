@@ -17,17 +17,34 @@
       const status=make('p','Chargement…','sheet-status');status.setAttribute('aria-live','polite');
       const stage=make('div',null,'sheet-pages');
       const chooser=make('select');chooser.setAttribute('aria-label','Modèle de fiche');
-      const attach=button('Utiliser ce modèle',async()=>{
-        if(!chooser.value)return;
+      const attach=button('Utiliser ce modèle',()=>manageTemplate(async()=>{
         if(sheet && Number(chooser.value)!==sheet.template.id && !doc.defaultView.confirm('Changer de modèle remplacera les valeurs de cette fiche. Continuer ?'))return;
-        await run(async()=>{const data=await request('assign',{templateId:Number(chooser.value)});sheet=data.sheet;dirty=false;conflict=false;renderSheet();});
-      });
+        const data=await request('assign',{templateId:Number(chooser.value)});
+        sheet=data.sheet;dirty=false;conflict=false;renderSheet();
+      }));
       const create=button('Créer un modèle',()=>designer());
+      const edit=button('Modifier le modèle',()=>manageTemplate(async()=>{
+        const {template}=await request(null,{templateId:chooser.value});
+        designer(template);
+      }));
+      const copy=button('Copier le modèle',()=>manageTemplate(async()=>{
+        const {template}=await request('copy_template',{templateId:Number(chooser.value)});
+        templates([...templateList,{id:template.id,name:template.name,isOwner:true}],template.id);
+        designer(template);
+      }));
+      const removeTemplate=button('Supprimer le modèle',()=>manageTemplate(async()=>{
+        const selected=selectedTemplate();
+        if(!doc.defaultView.confirm('Supprimer « '+selected.name+' » des modèles disponibles ? Les fiches déjà attribuées seront conservées.'))return;
+        await request('delete_template',{templateId:selected.id});
+        templates(templateList.filter(item=>item.id!==selected.id),sheet?.template.id);
+        status.classList.remove('sheet-error');
+        status.textContent='Modèle supprimé.';
+      }));
       const save=button('Enregistrer la fiche',()=>saveValues());
-      chooser.hidden=attach.hidden=create.hidden=save.hidden=true;
-      tools.append(button('Bio & infos',()=>{if(closeAllowed()){dialog.close();config.onBio?.();}}),chooser,attach,create,save);
+      chooser.hidden=attach.hidden=create.hidden=edit.hidden=copy.hidden=removeTemplate.hidden=save.hidden=true;
+      tools.append(button('Bio & infos',()=>{if(closeAllowed()){dialog.close();config.onBio?.();}}),chooser,attach,create,edit,copy,removeTemplate,save);
       floating.body.append(tools,status,stage);
-      function closeAllowed(){return !saving && (!dirty || doc.defaultView.confirm('Les modifications de cette fiche ne sont pas enregistrées. Fermer ?'));}
+      function closeAllowed(){return !saving && !managing && !editorOpen && (!dirty || doc.defaultView.confirm('Les modifications de cette fiche ne sont pas enregistrées. Fermer ?'));}
       dialog.addEventListener('cancel',event=>{if(!closeAllowed())event.preventDefault();});
       dialog.addEventListener('close',()=>{opened.delete(key);dialog.remove();});
       const beforeUnload=event=>{if(dirty){event.preventDefault();event.returnValue='';}};
@@ -37,16 +54,41 @@
         const url=new URL(config.apiUrl,doc.location.href);
         const options={credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}};
         if(action){options.method='POST';options.headers['Content-Type']='application/json';options.headers['X-CSRF-Token']=config.csrfToken;options.body=JSON.stringify({action,campaignId:config.campaignId,noteId:config.noteId,...body});}
-        else {url.searchParams.set('campaignId',config.campaignId);url.searchParams.set('noteId',config.noteId);}
+        else {url.searchParams.set('campaignId',config.campaignId);url.searchParams.set('noteId',config.noteId);if(body.templateId)url.searchParams.set('templateId',body.templateId);}
         const response=await fetch(url,options);const payload=await response.json();
         if(!response.ok || !payload.success){const error=new Error(payload.error||'Impossible de charger la fiche.');error.status=response.status;throw error;}
         return payload.data;
       }
       async function run(task){try{await task();}catch(error){status.textContent=error.message;status.classList.add('sheet-error');}}
-      function templates(list,selected){chooser.replaceChildren(new Option('Choisir un modèle…',''));list.forEach(item=>chooser.append(new Option(item.name,String(item.id))));chooser.value=String(selected || '');}
+      let templateList=[], managing=false, editorOpen=false;
+      function selectedTemplate(){return templateList.find(item=>String(item.id)===chooser.value);}
+      function templateActions(){
+        const selected=selectedTemplate();
+        chooser.hidden=!permissions.canManage && !templateList.length;
+        attach.hidden=create.hidden=!permissions.canManage;
+        edit.hidden=removeTemplate.hidden=!selected?.isOwner;
+        copy.hidden=!selected || selected.isOwner;
+        chooser.disabled=managing || editorOpen;
+        create.disabled=edit.disabled=copy.disabled=removeTemplate.disabled=chooser.disabled;
+        attach.disabled=saving || chooser.disabled || !selected;
+      }
+      chooser.addEventListener('change',templateActions);
+      async function manageTemplate(task){
+        if(managing || editorOpen || !selectedTemplate())return;
+        managing=true;templateActions();
+        try{await run(task);}
+        finally{managing=false;templateActions();}
+      }
+      function templates(list,selected){
+        templateList=[...list].sort((a,b)=>a.name.localeCompare(b.name) || a.id-b.id);
+        chooser.replaceChildren(new Option('Choisir un modèle…',''));
+        templateList.forEach(item=>chooser.append(new Option(item.name,String(item.id))));
+        chooser.value=templateList.some(item=>item.id===selected)?String(selected):'';
+        templateActions();
+      }
       async function load(){await run(async()=>{
         const data=await request();sheet=data.sheet;permissions=data;
-        templates(data.templates,sheet?.template.id);chooser.hidden=attach.hidden=create.hidden=!data.canManage;save.hidden=!data.canEdit;
+        templates(data.templates,sheet?.template.id);save.hidden=!data.canEdit;
         renderSheet();
       });}
       function renderSheet(){
@@ -71,15 +113,18 @@
         saving=true;save.disabled=true;attach.disabled=true;const version=editVersion;
         try {const result=await request('save',{revision:sheet.revision,values:{...sheet.values}});sheet.revision=result.revision;if(version===editVersion)dirty=false;status.textContent=dirty?'Certaines modifications restent à enregistrer.':'Fiche enregistrée.';}
         catch(error){conflict=error.status===409;status.textContent=error.message;status.classList.add('sheet-error');}
-        finally{saving=false;save.disabled=conflict;attach.disabled=false;}
+        finally{saving=false;save.disabled=conflict;templateActions();}
       }
-      function designer(){
+      function designer(template=null){
+        if(editorOpen)return;
+        editorOpen=true;templateActions();
         const editor=make('dialog',null,'library-modal sheet-window sheet-designer');doc.body.append(editor);
-        const view=config.windows.enhance(editor,'Créer un modèle de fiche');
-        let pages=[],fields=[],selected=null,drawing=true,changed=false,busy=false;
+        const view=config.windows.enhance(editor,template?'Modifier un modèle de fiche':'Créer un modèle de fiche');
+        let pages=template?.pages ?? [],fields=template?.fields ?? [],selected=null,drawing=true,changed=false,busy=false;
         const name=make('input');name.placeholder='Nom du modèle';name.maxLength=160;name.setAttribute('aria-label','Nom du modèle');
+        name.value=template?.name ?? '';
         const upload=make('input');upload.type='file';upload.accept='application/pdf,image/png,image/jpeg,image/gif,image/webp,image/avif';upload.multiple=true;upload.setAttribute('aria-label','Importer les pages du modèle');
-        const info=make('p','Importez une image ou un PDF, puis tracez les zones de texte sur les pages.','sheet-status');info.setAttribute('aria-live','polite');
+        const info=make('p',template?'Sélectionnez une zone pour la modifier ou tracez une nouvelle zone.':'Importez une image ou un PDF, puis tracez les zones de texte sur les pages.','sheet-status');info.setAttribute('aria-live','polite');
         const mode=button('Tracer des zones : activé',()=>{drawing=!drawing;mode.textContent='Tracer des zones : '+(drawing?'activé':'désactivé');mode.setAttribute('aria-pressed',String(drawing));});mode.setAttribute('aria-pressed','true');
         const label=make('input');label.placeholder='Nom de la zone sélectionnée';label.setAttribute('aria-label','Nom de la zone');label.maxLength=160;
         const font=make('input');font.type='number';font.min='5';font.max='80';font.value='15';font.setAttribute('aria-label','Taille du texte pour une page de 1000 pixels');
@@ -90,10 +135,26 @@
         const controls=make('div',null,'sheet-designer-controls');
         const saveTemplate=button('Enregistrer le modèle',async()=>{
           if(busy)return;
+          if(template && template.id===sheet?.template.id && (dirty || saving)){
+            info.textContent='Enregistrez les modifications de la fiche avant de modifier son modèle.';
+            info.classList.add('sheet-error');
+            return;
+          }
           busy=true;saveTemplate.disabled=true;upload.disabled=true;
           try{
-            const data=await request('create_template',{name:name.value.trim(),pages,fields});
-            const current=await request();templates(current.templates,data.template.id);changed=false;editor.close();status.textContent='Modèle enregistré. Cliquez sur « Utiliser ce modèle » pour l’attribuer au personnage.';
+            const data=await request(template?'update_template':'create_template',{templateId:template?.id,name:name.value.trim(),pages,fields});
+            const saved=data.template;
+            templates([...templateList.filter(item=>item.id!==saved.id),{id:saved.id,name:saved.name,isOwner:true}],saved.id);
+            changed=false;editor.close();
+            await run(async()=>{
+              if(sheet?.template.id===saved.id && !dirty && !saving){
+                const current=await request();
+                if(!dirty && !saving){sheet=current.sheet;conflict=false;renderSheet();}
+              }
+              status.classList.remove('sheet-error');
+              status.textContent=sheet?.template.id===saved.id || !permissions.canManage
+                ? 'Modèle enregistré.' : 'Modèle enregistré. Cliquez sur « Utiliser ce modèle » pour l’attribuer au personnage.';
+            });
           }catch(error){info.textContent=error.message;info.classList.add('sheet-error');}
           finally{busy=false;saveTemplate.disabled=false;upload.disabled=false;}
         });
@@ -156,8 +217,8 @@
               if(file.size>25000000)throw new Error('Chaque fichier source doit faire moins de 25 Mo.');
               if(file.type==='application/pdf' || /\.pdf$/i.test(file.name)){
                 info.textContent='Conversion du PDF en pages…';
-                pdfLibrary=pdfLibrary || import(new URL('build/pdf.mjs',libraryBase).href);
-                const pdfjs=await pdfLibrary;pdfjs.GlobalWorkerOptions.workerSrc=new URL('build/pdf.worker.mjs',libraryBase).href;
+                pdfLibrary=pdfLibrary || import(new URL('build/pdf.js',libraryBase).href);
+                const pdfjs=await pdfLibrary;pdfjs.GlobalWorkerOptions.workerSrc=new URL('build/pdf.worker.js',libraryBase).href;
                 const task=pdfjs.getDocument({data:new Uint8Array(await file.arrayBuffer()),cMapUrl:new URL('cmaps/',libraryBase).href,cMapPacked:true,standardFontDataUrl:new URL('standard_fonts/',libraryBase).href,wasmUrl:new URL('wasm/',libraryBase).href,isEvalSupported:false});
                 const pdf=await task.promise;
                 try{
@@ -178,7 +239,8 @@
           finally{busy=false;upload.disabled=saveTemplate.disabled=false;upload.value='';}
         });
         editor.addEventListener('cancel',event=>{if(busy || (changed&&!doc.defaultView.confirm('Quitter sans enregistrer ce modèle ?')))event.preventDefault();});
-        editor.addEventListener('close',()=>editor.remove());view.open();select(null);
+        editor.addEventListener('close',()=>{editorOpen=false;templateActions();editor.remove();});
+        view.open();renderDesigner();
       }
       floating.open();load();
     }

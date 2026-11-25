@@ -75,7 +75,7 @@ function mapReusableSheetTemplates(PDO $pdo, array $user, ?int $templateId = nul
 {
     $stmt = $pdo->prepare("SELECT t.id,t.name,c.name AS campaign_name
         FROM character_sheet_templates t JOIN campaigns c ON c.id=t.campaign_id
-        WHERE (t.author_user_id=:user OR c.owner_user_id=:user OR :role='admin'
+        WHERE t.deleted_at IS NULL AND (t.author_user_id=:user OR c.owner_user_id=:user OR :role='admin'
             OR EXISTS (SELECT 1 FROM campaign_members m WHERE m.campaign_id=c.id AND m.user_id=:user AND m.member_role='gm'))
             AND (:template IS NULL OR t.id=:template)
         ORDER BY t.name COLLATE NOCASE,t.id");
