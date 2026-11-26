@@ -731,6 +731,10 @@
   overflow-x: auto;
 }
 
+.codex-note-card .codex-rich-body {
+  white-space: pre-line;
+}
+
 .codex-rich-body p + p {
   margin-top: 1em;
 }

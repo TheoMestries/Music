@@ -127,7 +127,7 @@ if ($error !== null && is_string($_POST['body_html'] ?? null)) {
 }
 
 ?>
-<link rel="stylesheet" href="<?= mapEscape(mapUrl('/css/codex.css?v=10')) ?>">
+<link rel="stylesheet" href="<?= mapEscape(mapUrl('/css/codex.css?v=11')) ?>">
 <link rel="stylesheet" href="<?= mapEscape(mapUrl('/css/codex-maps.css?v=1')) ?>">
 <div class="codex-workspace codex-layout">
   <aside class="section-block codex-library" aria-label="Codex de campagne">
