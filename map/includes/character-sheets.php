@@ -2,6 +2,8 @@
 declare(strict_types=1);
 require_once __DIR__.'/notes.php';
 
+const MAP_CHARACTER_SHEET_CONFLICT = 'Cette fiche a changé ailleurs. Rouvrez-la avant de reprendre vos modifications.';
+
 function mapRequireSheetGm(int $campaignId, array $user): array {
     $access=mapRequireCampaignAccess($campaignId,$user);
     if (!mapCanUseGmNotes($access)) mapThrowForbidden('Seul un MJ peut créer ou choisir un modèle de fiche.');
@@ -112,6 +114,11 @@ function mapUpdateSheetTemplate(int $campaignId, int $id, string $name, array $p
             WHERE entry.key IN (SELECT json_extract(zone.value,'$.id') FROM json_each(?) zone)
         ), revision=revision+1, updated_at=CURRENT_TIMESTAMP WHERE template_id=?");
         $stmt->execute([$fields, $id]);
+        $stmt = $pdo->prepare('UPDATE campaign_codex_character_sheets SET field_values = (
+            SELECT json_group_object(entry.key, entry.value) FROM json_each(campaign_codex_character_sheets.field_values) entry
+            WHERE entry.key IN (SELECT json_extract(zone.value, \'$.id\') FROM json_each(?) zone)
+        ), revision = revision + 1 WHERE template_id = ?');
+        $stmt->execute([$fields, $id]);
         $pdo->prepare('UPDATE campaign_board_state SET revision=revision+1 WHERE campaign_id=?')->execute([$campaignId]);
         $template = mapSheetTemplate($campaignId, $id, $user);
         $pdo->commit();
@@ -145,35 +152,61 @@ function mapGetCharacterSheet(int $campaignId,int $noteId,array $user):?array {
         WHERE s.note_id=? AND t.campaign_id=?');
     $stmt->execute([$noteId,$campaignId]);$row=$stmt->fetch();
     if (!$row) return null;
+    return mapDecodeCharacterSheet($row);
+}
+function mapDecodeCharacterSheet(array $row): array {
     return ['template'=>mapDecodeSheetTemplate($row),'values'=>(object)json_decode($row['field_values'],true),'revision'=>(int)$row['revision']];
 }
 function mapAssignCharacterSheet(int $campaignId,int $noteId,int $templateId,array $user):array {
-    mapRequireSheetGm($campaignId,$user);mapSheetCharacter($campaignId,$noteId,$user,true);
     $pdo=mapGetDatabase();
-    // Values belong to a particular model. Changing it is explicit in the UI.
-    $stmt=$pdo->prepare("INSERT INTO character_sheets(note_id,template_id)
-        SELECT ?,id FROM character_sheet_templates WHERE id=? AND campaign_id=? AND deleted_at IS NULL
-        ON CONFLICT(note_id) DO UPDATE SET field_values=CASE WHEN character_sheets.template_id=excluded.template_id THEN character_sheets.field_values ELSE '{}' END, template_id=excluded.template_id, revision=character_sheets.revision+1, updated_at=CURRENT_TIMESTAMP");
-    $stmt->execute([$noteId,$templateId,$campaignId]);
-    if (!$stmt->rowCount()) mapThrowNotFound('Modèle introuvable.');
-    $pdo->prepare('UPDATE campaign_board_state SET revision=revision+1 WHERE campaign_id=?')->execute([$campaignId]);
-    return mapGetCharacterSheet($campaignId,$noteId,$user);
+    $pdo->beginTransaction();
+    try {
+        mapRequireSheetGm($campaignId,$user);
+        mapSheetCharacter($campaignId,$noteId,$user,true);
+        $stmt=$pdo->prepare("INSERT INTO character_sheets(note_id,template_id)
+            SELECT ?,id FROM character_sheet_templates WHERE id=? AND campaign_id=? AND deleted_at IS NULL
+            ON CONFLICT(note_id) DO UPDATE SET field_values=CASE WHEN character_sheets.template_id=excluded.template_id THEN character_sheets.field_values ELSE '{}' END, template_id=excluded.template_id, revision=character_sheets.revision+1, updated_at=CURRENT_TIMESTAMP");
+        $stmt->execute([$noteId,$templateId,$campaignId]);
+        if (!$stmt->rowCount()) mapThrowNotFound('Modèle introuvable.');
+        mapSyncCodexPublicationSheet($pdo, $campaignId, $noteId, false);
+        $pdo->prepare('UPDATE campaign_board_state SET revision=revision+1 WHERE campaign_id=?')->execute([$campaignId]);
+        $sheet = mapGetCharacterSheet($campaignId,$noteId,$user);
+        $pdo->commit();
+        return $sheet;
+    } catch (Throwable $error) {
+        $pdo->rollBack();
+        throw $error;
+    }
 }
 function mapSaveCharacterSheet(int $campaignId,int $noteId,int $revision,array $values,array $user):array {
-    mapSheetCharacter($campaignId,$noteId,$user,true);
-    $sheet=mapGetCharacterSheet($campaignId,$noteId,$user);
+    $pdo = mapGetDatabase();
+    $ownsTransaction = !$pdo->inTransaction();
+    if ($ownsTransaction) $pdo->beginTransaction();
+    try {
+        mapSheetCharacter($campaignId,$noteId,$user,true);
+        $sheet=mapGetCharacterSheet($campaignId,$noteId,$user);
+        $clean = mapCharacterSheetValues($sheet, $revision, $values);
+        $stmt=$pdo->prepare('UPDATE character_sheets SET field_values=?,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE note_id=? AND revision=?');
+        $stmt->execute([$clean,$noteId,$revision]);
+        if ($stmt->rowCount()!==1) mapThrowHttpException(409, MAP_CHARACTER_SHEET_CONFLICT);
+        mapSyncCodexPublicationSheet($pdo, $campaignId, $noteId, false);
+        $pdo->prepare('UPDATE campaign_board_state SET revision=revision+1 WHERE campaign_id=?')->execute([$campaignId]);
+        if ($ownsTransaction) $pdo->commit();
+        return ['revision'=>$revision+1];
+    } catch (Throwable $error) {
+        if ($ownsTransaction) $pdo->rollBack();
+        throw $error;
+    }
+}
+
+function mapCharacterSheetValues(?array $sheet, int $revision, array $values): string {
     if (!$sheet) mapThrowNotFound('Choisissez d’abord un modèle.');
-    $conflict = 'Cette fiche a changé ailleurs. Fermez puis rouvrez la fiche avant de reprendre vos modifications.';
-    if ($sheet['revision'] !== $revision) mapThrowHttpException(409, $conflict);
+    if ($sheet['revision'] !== $revision) mapThrowHttpException(409, MAP_CHARACTER_SHEET_CONFLICT);
     $allowed=array_column($sheet['template']['fields'],'id');$clean=[];$length=0;
     foreach($values as $id=>$value) {
         if (!in_array((string)$id,$allowed,true) || !is_string($value) || mb_strlen($value)>10000) throw new DomainException('Valeur de zone invalide.');
         $length+=strlen($value);$clean[$id]=$value;
     }
     if ($length>200000) throw new DomainException('La fiche contient trop de texte.');
-    $stmt=mapGetDatabase()->prepare('UPDATE character_sheets SET field_values=?,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE note_id=? AND revision=?');
-    $stmt->execute([json_encode((object)$clean,JSON_THROW_ON_ERROR),$noteId,$revision]);
-    if ($stmt->rowCount()!==1) mapThrowHttpException(409, $conflict);
-    mapGetDatabase()->prepare('UPDATE campaign_board_state SET revision=revision+1 WHERE campaign_id=?')->execute([$campaignId]);
-    return ['revision'=>$revision+1];
+    return json_encode((object)$clean, JSON_THROW_ON_ERROR);
 }

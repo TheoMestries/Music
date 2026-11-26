@@ -9,8 +9,10 @@ function mapDocumentGrant(array $note, array $user, string $kind): bool {
 }
 function mapValidateDocumentOptions(array $options, array $note, array $access, array $user): array {
  $previous = mapDocumentOptions($note);
+ $linked = !empty($note['codex_entry_id']);
  $manager = mapCanUseGmNotes($access) || (int)$note['author_user_id'] === (int)$user['user_id'];
  foreach (['readers','editors'] as $key) {
+  if ($linked) { $options[$key] = []; continue; }
   if (!$manager) { $options[$key] = $previous[$key] ?? []; continue; }
   $ids = $options[$key] ?? [];
   if (!is_array($ids) || count($ids)>100) throw new DomainException('Liste de permissions invalide.');
@@ -20,7 +22,8 @@ function mapValidateDocumentOptions(array $options, array $note, array $access, 
   $options[$key]=array_values(array_unique($ids));
  }
  $options['gmNotes'] = mapCanUseGmNotes($access) ? mapDocumentHtml(mapValidateNoteContent((string)($options['gmNotes'] ?? ''))) : ($previous['gmNotes'] ?? '');
- $image = mapValidateDocumentImage((string)($options['image'] ?? ''));
+ $imageValue = $options['image'] ?? ($linked ? ($previous['image'] ?? '') : '');
+ $image = $linked && $imageValue === ($previous['image'] ?? '') ? $imageValue : mapValidateDocumentImage((string) $imageValue);
  $tokenImage = mapValidateDocumentImage((string)($options['tokenImage'] ?? ($previous['tokenImage'] ?? '')));
  return ['readers'=>$options['readers'],'editors'=>$options['editors'],'gmNotes'=>$options['gmNotes'],'image'=>$image, 'rich'=>!empty($options['rich']), 'type'=>$previous['type'] ?? 'document', 'tokenImage'=>$tokenImage];
 }

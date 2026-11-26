@@ -92,7 +92,7 @@ function mapBoardTokenSettings(int $campaignId,int $pageId,int $id,string $layer
     $note = mapGetCampaignNoteRecord($pdo,$campaignId,(int)$entity['note_id']);
     if ((mapDocumentOptions($note)['type'] ?? null) !== 'character') throw new DomainException('Cet élément n’est pas un jeton de personnage.');
     $characters = [];
-    $stmt = $pdo->prepare("SELECT id,title,author_user_id,visibility,options FROM campaign_notes WHERE campaign_id=? AND json_extract(options,'$.type')='character' ORDER BY title");
+    $stmt = $pdo->prepare("SELECT id,title,author_user_id,visibility,options,codex_entry_id,codex_published FROM campaign_notes WHERE campaign_id=? AND json_extract(options,'$.type')='character' ORDER BY title");
     $stmt->execute([$campaignId]);
     foreach ($stmt as $candidate) {
         if (mapCanViewCampaignNote($candidate,$access,$user) && mapCanEditCampaignNote($candidate,$access,$user)) {

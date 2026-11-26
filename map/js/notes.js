@@ -42,7 +42,7 @@
       const article=doc.createElement('article');article.className='document-reading';
       if(note.options?.image){const img=doc.createElement('img');img.src=note.options.image;img.alt=note.title;article.append(img);}
       const text=doc.createElement('div');text.className='document-reading-text';
-      if(note.options?.rich)text.innerHTML=note.content;else text.textContent=note.content;
+      if(note.options?.rich)text.innerHTML=note.displayContent ?? note.content;else text.textContent=note.content;
       article.append(text);
       if(canUseGmNotes && note.options?.gmNotes){
         const section=doc.createElement('section');section.className='document-gm-reading';
@@ -287,7 +287,7 @@
     const options=note.options||{};
     if(options.image){const img=modalHost.createElement('img');img.src=options.image;img.alt=note.title;readingContent.append(img);}
     const text=modalHost.createElement('div'); text.className='document-reading-text';
-    if(options.rich)text.innerHTML=note.content;else text.textContent=note.content;
+    if(options.rich)text.innerHTML=note.displayContent ?? note.content;else text.textContent=note.content;
     readingContent.append(text);
     if(canUseGmNotes && options.gmNotes) {
       const section=modalHost.createElement('section');section.className='document-gm-reading';
@@ -573,6 +573,7 @@
     contentInput.value = note.content;
     const options = note.options || {};
     const character=options.type==='character';
+    titleInput.maxLength = note.codexEntryId ? 250 : 160;
     editorForm.classList.toggle('character-editor',character);
     tokenDrop.hidden=!character;
     titleInput.closest('.field-group').querySelector('label').textContent=character?'Nom':'Titre';
@@ -595,7 +596,8 @@
     displayImage(options.image || '');
     imageInput.value = '';
     imageInput.disabled = removeImage.disabled = !note.canEdit;
-    authorLabel.textContent = state.draft ? '' : `Auteur : ${note.author.displayName} · Mise a jour : ${formatDate(note.updatedAt)}`;
+    authorLabel.textContent = state.draft ? '' :
+      `${note.codexEntryId ? 'Lié au Codex · ' : ''}Auteur : ${note.author.displayName} · Mise a jour : ${formatDate(note.updatedAt)}`;
 
     [titleInput, tagsInput, contentInput].forEach((field) => {
       field.readOnly = !note.canEdit;
@@ -640,6 +642,7 @@
 
     note.tags = parseTags(tagsInput.value);
     note.content = contentInput.value;
+    if (note.codexEntryId) note.savedPublishedImage ??= note.options?.image || '';
     note.options = {
       readers: [...readers.selectedOptions].map(option => option.value),
       editors: [...editors.selectedOptions].map(option => option.value),
@@ -709,13 +712,15 @@
 
     const noteId = note.id;
     const editVersion = state.editVersions.get(noteId) ?? 0;
+    const options = {...note.options};
+    if (note.codexEntryId && options.image === note.savedPublishedImage) delete options.image;
     const requestBody = {
       action: 'update',
       campaignId,
       noteId,
       revision: note.revision,
       title: note.title,
-      content: note.content, options: note.options,
+      content: note.content, options,
       folder: note.folder,
       tags: note.tags,
       visibility: note.visibility,
@@ -738,6 +743,7 @@
         } else {
           state.notes[currentIndex].revision = savedNote.revision;
           state.notes[currentIndex].updatedAt = savedNote.updatedAt;
+          if (savedNote.codexEntryId) state.notes[currentIndex].savedPublishedImage = savedNote.options?.image || '';
           scheduleSave();
         }
 

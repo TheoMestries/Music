@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__.'/characters_test.php';
 require_once __DIR__.'/../includes/character-sheets.php';
+require_once __DIR__.'/../includes/codex-character-sheets.php';
 $fields=[['id'=>'name','page'=>0,'label'=>'Nom','x'=>.1,'y'=>.1,'w'=>.3,'h'=>.05,'font'=>.015]];
 $template=mapCreateSheetTemplate(1,'Fiche test',[$avatar],$fields,$owner);
 assertNotesTest(count($template['fields'])===1,'Zone enregistrée.');
@@ -27,8 +28,24 @@ $pdo=mapGetDatabase();$pdo->exec("INSERT INTO campaigns(name,owner_user_id) VALU
 $otherId=(int)$pdo->lastInsertId();
 expectNotesException(MapHttpException::class,404,static fn()=>mapSheetTemplate($otherId,$template['id'],$owner),'Modèle isolé par campagne.');
 $new=mapCreateSheetTemplate(1,'Autre modèle',[$avatar],$fields,$owner);
+$codexId = mapCodexSaveEntry($pdo, 1, null, ['category' => 'Personnages', 'title' => 'Personnage Codex'], null);
+mapCodexSaveEntryRule($pdo, 1, $codexId, (int) $playerOne['user_id'], ['read' => 'allow']);
+mapCodexSaveEntryRule($pdo, 1, $codexId, (int) $playerTwo['user_id'], ['edit' => 'allow']);
+assertNotesTest(mapCodexCharacterSheet($pdo, 1, $codexId) === null, 'Une fiche Codex commence sans modèle.');
+expectNotesException(MapHttpException::class, 403,
+    static fn () => mapAssignCodexCharacterSheet($pdo, 1, $codexId, $new['id'], $playerTwo), 'Un joueur éditeur ne choisit pas le modèle.');
+$codexSheet = mapAssignCodexCharacterSheet($pdo, 1, $codexId, $new['id'], $owner);
+assertNotesTest($codexSheet['template']['id'] === $new['id'] && $codexSheet['revision'] === 1, 'Les modèles Sus20 sont réutilisables dans le Codex.');
+expectNotesException(MapHttpException::class, 403,
+    static fn () => mapSaveCodexCharacterSheet($pdo, 1, $codexId, 1, ['name' => 'Interdit'], $playerOne), 'Le lecteur Codex ne remplit pas les zones.');
+mapSaveCodexCharacterSheet($pdo, 1, $codexId, 1, ['name' => 'Texte Codex'], $playerTwo);
+expectNotesException(MapHttpException::class, 409,
+    static fn () => mapSaveCodexCharacterSheet($pdo, 1, $codexId, 1, ['name' => 'Conflit'], $playerTwo), 'La fiche Codex protège les révisions.');
+expectNotesException(MapHttpException::class, 404,
+    static fn () => mapCodexCharacterSheetRights($pdo, $otherId, $codexId, $owner), 'La fiche Codex est isolée par campagne.');
 $reassigned=mapAssignCharacterSheet(1,$character['id'],$new['id'],$owner);
 assertNotesTest(!isset($reassigned['values']->name),'Changer de modèle remet la fiche à zéro.');
+assertNotesTest(mapCodexCharacterSheet($pdo, 1, $codexId)['values']->name === 'Texte Codex', 'Les valeurs de la note et du Codex sont indépendantes.');
 
 expectNotesException(MapHttpException::class,403,static fn()=>mapUpdateSheetTemplate(1,$new['id'],'Interdit',[$avatar],$fields,$playerOne),'Seul le créateur modifie le modèle.');
 expectNotesException(MapHttpException::class,403,static fn()=>mapDeleteSheetTemplate(1,$new['id'],$playerOne),'Seul le créateur supprime le modèle.');
@@ -47,10 +64,13 @@ $renamed[0]['label'] = 'Prénom';
 mapUpdateSheetTemplate(1, $new['id'], 'Modèle modifié', [$avatar], $renamed, $owner);
 $updated = mapGetCharacterSheet(1, $character['id'], $owner);
 assertNotesTest($updated['values']->name === 'Personnage' && $updated['revision'] === $revision + 2, 'Modifier le modèle conserve les valeurs des zones existantes et actualise la révision.');
+$codexUpdated = mapCodexCharacterSheet($pdo, 1, $codexId);
+assertNotesTest($codexUpdated['values']->name === 'Texte Codex' && $codexUpdated['revision'] === 3, 'Le modèle partagé actualise aussi les fiches du Codex.');
 $renamed[0]['id'] = 'first_name';
 mapUpdateSheetTemplate(1, $new['id'], 'Modèle modifié', [$avatar], $renamed, $owner);
 $updated = mapGetCharacterSheet(1, $character['id'], $owner);
 assertNotesTest(!isset($updated['values']->name), 'Les zones supprimées ne laissent pas de valeurs impossibles à enregistrer.');
+assertNotesTest(!isset(mapCodexCharacterSheet($pdo, 1, $codexId)['values']->name), 'Les zones retirées sont aussi nettoyées dans le Codex.');
 mapSaveCharacterSheet(1, $character['id'], $updated['revision'], ['first_name' => 'Ham'], $owner);
 
 $pdo->prepare('UPDATE campaigns SET default_sheet_template_id=? WHERE id=1')->execute([$new['id']]);

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/campaigns.php';
 require_once __DIR__ . '/document-options.php';
+require_once __DIR__ . '/campaign-codex.php';
 
 final class MapNoteConflictException extends RuntimeException
 {
@@ -118,7 +119,8 @@ function mapGetCampaignNoteRecord(PDO $pdo, int $campaignId, int $noteId): ?arra
                 n.campaign_id,
                 n.author_user_id,
                 n.title,
-                n.content, n.options,
+                n.content, n.options, n.codex_entry_id, n.codex_published,
+                entry.title AS codex_title, entry.body AS codex_body, entry.body_html AS codex_body_html,
                 n.folder,
                 n.visibility,
                 n.revision,
@@ -128,6 +130,7 @@ function mapGetCampaignNoteRecord(PDO $pdo, int $campaignId, int $noteId): ?arra
                 author.display_name AS author_display_name
          FROM campaign_notes AS n
          INNER JOIN users AS author ON author.id = n.author_user_id
+         LEFT JOIN campaign_codex_entries AS entry ON entry.id = n.codex_entry_id AND entry.campaign_id = n.campaign_id
          WHERE n.id = :note_id
            AND n.campaign_id = :campaign_id
          LIMIT 1'
@@ -156,6 +159,7 @@ function mapGetCampaignNoteTags(PDO $pdo, int $noteId): array
 
 function mapCanViewCampaignNote(array $note, array $access, array $currentUser): bool
 {
+    if (!empty($note['codex_entry_id'])) return !empty($note['codex_published']) && mapCanUseGmNotes($access);
     if (mapDocumentGrant($note, $currentUser, 'readers') || mapDocumentGrant($note, $currentUser, 'editors')) return true;
     // Explicit journal permissions replace the former shared visibility setting.
     if (array_key_exists('readers', mapDocumentOptions($note))) {
@@ -172,6 +176,7 @@ function mapCanViewCampaignNote(array $note, array $access, array $currentUser):
 
 function mapCanEditCampaignNote(array $note, array $access, array $currentUser): bool
 {
+    if (!empty($note['codex_entry_id'])) return !empty($note['codex_published']) && mapCanUseGmNotes($access);
     if (mapDocumentGrant($note, $currentUser, 'editors')) return true;
     if ((int) $note['author_user_id'] === (int) $currentUser['user_id']) {
         return true;
@@ -197,12 +202,22 @@ function mapAssertNoteVisibilityAllowed(string $visibility, array $access, array
 
 function mapPublicNoteData(PDO $pdo, array $note, array $access, array $currentUser): array
 {
+    $linked = !empty($note['codex_entry_id']);
+    $content = $linked ? ($note['codex_body_html'] ?? mapCodexTextAsHtml($note['codex_body'])) : (string) $note['content'];
+    $displayContent = null;
+    if ($linked && preg_match(MAP_CODEX_MENTION_TOKEN, $content)) {
+        $campaignId = (int) $note['campaign_id'];
+        $displayContent = mapCodexRichMentionMarkup($content, mapCodexEntries($pdo, $campaignId),
+            static fn (array $query): string => mapUrlWithQuery('/codex.php', ['campaignId' => $campaignId] + $query));
+    }
     return [
         'id' => (int) $note['id'],
         'campaignId' => (int) $note['campaign_id'],
-        'title' => (string) $note['title'],
+        'title' => $linked ? $note['codex_title'] : (string) $note['title'],
+        'codexEntryId' => $linked ? (int) $note['codex_entry_id'] : null,
+        'displayContent' => $displayContent,
         'options' => array_merge(mapDocumentOptions($note), ['gmNotes' => mapCanUseGmNotes($access) ? (mapDocumentOptions($note)['gmNotes'] ?? '') : '']),
-        'content' => (string) $note['content'],
+        'content' => $content,
         'folder' => $note['folder'] !== null ? (string) $note['folder'] : null,
         'tags' => mapGetCampaignNoteTags($pdo, (int) $note['id']),
         'visibility' => (string) $note['visibility'],
@@ -215,8 +230,8 @@ function mapPublicNoteData(PDO $pdo, array $note, array $access, array $currentU
             'displayName' => (string) $note['author_display_name'],
         ],
         'canEdit' => mapCanEditCampaignNote($note, $access, $currentUser),
-        'canManagePermissions' => mapCanUseGmNotes($access) || (int) $note['author_user_id'] === (int) $currentUser['user_id'],
-        'canDelete' => mapCanEditCampaignNote($note, $access, $currentUser),
+        'canManagePermissions' => !$linked && (mapCanUseGmNotes($access) || (int) $note['author_user_id'] === (int) $currentUser['user_id']),
+        'canDelete' => !$linked && mapCanEditCampaignNote($note, $access, $currentUser),
     ];
 }
 
@@ -234,13 +249,14 @@ function mapVisibleCampaignNoteRows(PDO $pdo, int $campaignId, array $access, ar
 {
     $documentFields = $summary
         ? "json_remove(n.options, '$.image', '$.tokenImage', '$.gmNotes') AS options"
-        : 'n.content, n.options';
+        : 'n.content, n.options, entry.title AS codex_title, entry.body AS codex_body, entry.body_html AS codex_body_html';
+    $join = $summary ? '' : 'LEFT JOIN campaign_codex_entries entry ON entry.id = n.codex_entry_id AND entry.campaign_id = n.campaign_id';
     $statement = $pdo->prepare(
         "SELECT n.id,
                 n.campaign_id,
                 n.author_user_id,
                 n.title,
-                $documentFields,
+                $documentFields, n.codex_entry_id, n.codex_published,
                 n.folder,
                 n.visibility,
                 n.revision,
@@ -250,7 +266,9 @@ function mapVisibleCampaignNoteRows(PDO $pdo, int $campaignId, array $access, ar
                 author.display_name AS author_display_name
          FROM campaign_notes AS n
          INNER JOIN users AS author ON author.id = n.author_user_id
+         $join
          WHERE n.campaign_id = :campaign_id
+           AND (n.codex_entry_id IS NULL OR (n.codex_published = 1 AND :can_view_gm = 1))
            AND (
                json_type(n.options, '$.readers') IS NOT NULL OR json_type(n.options, '$.editors') IS NOT NULL OR n.visibility = 'shared'
                OR (n.visibility = 'personal' AND n.author_user_id = :user_id)
@@ -405,15 +423,22 @@ function mapUpdateCampaignNote(
         throw new DomainException('Revision de note invalide.');
     }
 
-    $title = mapValidateNoteTitle($title);
-    $content = mapValidateNoteContent($content);
+    $linked = !empty($note['codex_entry_id']);
+    $title = $linked ? mapCodexText($title, 250, 'Le titre', true) : mapValidateNoteTitle($title);
+    $content = $linked ? mapCodexText($content, 300000, 'La description') : mapValidateNoteContent($content);
     $folder = mapValidateNoteFolder($folder);
     $tags = mapNormalizeNoteTags($tags);
-    $visibility = mapValidateNoteVisibility($visibility);
+    $visibility = $linked ? 'gm' : mapValidateNoteVisibility($visibility);
     mapAssertNoteVisibilityAllowed($visibility, $access, $currentUser, $note);
 
     $validatedOptions = $options === null ? mapDocumentOptions($note) : mapValidateDocumentOptions($options, $note, $access, $currentUser);
-    if (!empty($validatedOptions['rich'])) $content = mapDocumentHtml($content);
+    if ($linked) {
+        $validatedOptions['rich'] = true;
+        $content = mapCodexText(mapCodexRichHtml($content), 300000, 'La description');
+        mapCodexText(mapCodexPlainText($content), 250000, 'La description');
+    } elseif (!empty($validatedOptions['rich'])) {
+        $content = mapDocumentHtml($content);
+    }
     try {
         $pdo->beginTransaction();
         $statement = $pdo->prepare(
@@ -430,8 +455,8 @@ function mapUpdateCampaignNote(
         );
         $statement->execute([
             ':options' => json_encode($validatedOptions, JSON_THROW_ON_ERROR),
-            ':title' => $title,
-            ':content' => $content,
+            ':title' => $linked ? mb_substr($title, 0, 160) : $title,
+            ':content' => $linked ? mapCodexLibraryStoredContent($content) : $content,
             ':folder' => $folder,
             ':visibility' => $visibility,
             ':note_id' => $noteId,
@@ -445,6 +470,9 @@ function mapUpdateCampaignNote(
         }
 
         mapReplaceCampaignNoteTags($pdo, $noteId, $tags);
+        if ($linked) {
+            mapSyncLibraryNoteToCodex($pdo, $note, $title, $content, $validatedOptions, (int) $currentUser['user_id']);
+        }
         mapTouchCampaign($pdo, $campaignId);
         $pdo->commit();
     } catch (Throwable $exception) {
@@ -504,6 +532,9 @@ function mapDeleteCampaignNote(int $campaignId, int $noteId, array $currentUser)
 
     if (!mapCanEditCampaignNote($note, $access, $currentUser)) {
         mapThrowForbidden('Vous ne pouvez pas supprimer cette note.');
+    }
+    if (!empty($note['codex_entry_id'])) {
+        mapThrowForbidden('Retirez cette publication depuis le Codex.');
     }
 
     try {

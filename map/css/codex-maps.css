@@ -1,0 +1,109 @@
+.codex-map {
+  display: grid;
+  gap: .8rem;
+}
+
+.codex-map-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem;
+}
+
+.codex-map-picture {
+  display: grid;
+  position: relative;
+  isolation: isolate;
+  width: fit-content;
+  max-width: 100%;
+  margin: .75rem;
+}
+
+.codex-map-picture img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: .4rem;
+}
+
+.codex-map-picture[data-placing] img {
+  cursor: crosshair;
+  outline: 2px solid var(--accent-strong);
+}
+
+.codex-map-pin {
+  display: grid;
+  position: absolute;
+  top: var(--pin-y);
+  left: var(--pin-x);
+  width: 1.6rem;
+  height: 1.6rem;
+  transform: translate(-50%, -50%);
+  place-items: center;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent-strong);
+  color: var(--bg);
+  box-shadow: 0 2px 6px #0008;
+  font-size: .75rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.codex-map-pin:is(:hover, :focus-visible) {
+  z-index: 1;
+  background: var(--text);
+  color: var(--bg);
+  outline: 2px solid var(--accent-strong);
+}
+
+.codex-map-legend {
+  display: grid;
+  gap: .35rem;
+  margin: 0;
+  padding-left: 1.6rem;
+  overflow-wrap: anywhere;
+}
+
+.codex-map-legend small {
+  margin-left: .5rem;
+  color: var(--text-soft);
+}
+
+.codex-map-live-pins {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.codex-map-editor[hidden],
+.codex-map-editor-picture[hidden],
+.codex-map-editor [data-map-place][hidden],
+.codex-map-editor [data-map-status]:empty {
+  display: none;
+}
+
+.codex-map-editor [data-map-place][aria-pressed="true"] {
+  border-color: var(--accent-strong);
+}
+
+.codex-map-pin-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 8rem 8rem auto;
+  align-items: end;
+  gap: .6rem;
+  margin-top: .65rem;
+}
+
+@media (max-width: 1050px) {
+  .codex-map-pin-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .codex-map-pin-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

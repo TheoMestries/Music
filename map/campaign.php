@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__.'/includes/layout.php';
 require_once __DIR__.'/includes/campaign-lobby.php';
+require_once __DIR__.'/includes/codex-permissions.php';
+require_once __DIR__.'/includes/notes.php';
 
 $currentUser = null;
 try {
@@ -83,6 +85,7 @@ try {
     }
 
     $canManage = $access['can_manage_campaign'];
+    $canUseCodex = mapCodexCanOpen(mapCodexPermissionContext(mapGetDatabase(), $campaignId, $access, (int) $currentUser['user_id']));
     $members = mapGetCampaignMembers($campaignId);
     $owners = $canManage && $currentUser['role'] !== 'player' ? mapListCampaignOwnerOptions($currentUser) : [];
     $eligible = $canManage && $currentUser['role'] !== 'player' ? mapListEligibleCampaignMembers($campaignId) : [];
@@ -104,6 +107,12 @@ try {
           <?php if (!$archived): ?>
             <a class="button" href="<?= mapEscape(mapUrlWithQuery('/campaign.php',['id'=>$campaignId])) ?>">Lancer la partie <span aria-hidden="true">→</span></a>
           <?php else: ?><p class="muted">Partie archivée</p><?php endif; ?>
+          <?php if ($canUseCodex): ?>
+            <a class="button button-secondary" href="<?= mapEscape(mapUrlWithQuery('/codex.php', ['campaignId' => $campaignId])) ?>">Codex</a>
+          <?php endif; ?>
+          <?php if (mapCanUseGmNotes($access)): ?>
+            <a class="button button-secondary" href="<?= mapEscape(mapUrlWithQuery('/scenarios.php', ['campaignId' => $campaignId])) ?>">Scénarios</a>
+          <?php endif; ?>
           <?php if ($canManage): ?>
           <details class="lobby-settings" <?= $editingSettings ? 'open' : '' ?>>
             <summary>Paramètres</summary>

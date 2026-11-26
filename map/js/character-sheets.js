@@ -5,13 +5,16 @@
   const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
   window.MapCharacterSheets = {
     open(config) {
-      const key=config.campaignId+':'+config.noteId;
+      const target = config.entryId === undefined ? {noteId: config.noteId} : {entryId: config.entryId};
+      const key = config.campaignId + ':' + (target.entryId === undefined ? 'note:' + target.noteId : 'codex:' + target.entryId);
       if(opened.has(key)){opened.get(key).open();return;}
       const doc=config.document || document;
       const make=(tag,text,className)=>{const n=doc.createElement(tag);if(text)n.textContent=text;if(className)n.className=className;return n;};
       const button=(text,fn)=>{const n=make('button',text,'button button-secondary');n.type='button';n.addEventListener('click',fn);return n;};
-      const dialog=make('dialog',null,'library-modal sheet-window');doc.body.append(dialog);
-      const floating=config.windows.enhance(dialog,'Fiche — '+config.title);opened.set(key,floating);
+      const dialog = config.container ? null : make('dialog', null, 'library-modal sheet-window');
+      if (dialog) doc.body.append(dialog);
+      const floating = dialog ? config.windows.enhance(dialog,'Fiche — '+config.title) : {body: config.container, open() {}};
+      opened.set(key,floating);
       let sheet=null, permissions={}, saving=false, dirty=false, editVersion=0, conflict=false;
       const tools=make('div',null,'sheet-toolbar');
       const status=make('p','Chargement…','sheet-status');status.setAttribute('aria-live','polite');
@@ -42,19 +45,20 @@
       }));
       const save=button('Enregistrer la fiche',()=>saveValues());
       chooser.hidden=attach.hidden=create.hidden=edit.hidden=copy.hidden=removeTemplate.hidden=save.hidden=true;
-      tools.append(button('Bio & infos',()=>{if(closeAllowed()){dialog.close();config.onBio?.();}}),chooser,attach,create,edit,copy,removeTemplate,save);
-      floating.body.append(tools,status,stage);
+      if (dialog) tools.append(button('Bio & infos',()=>{if(closeAllowed()){dialog.close();config.onBio?.();}}));
+      tools.append(chooser,attach,create,edit,copy,removeTemplate,save);
+      floating.body.replaceChildren(tools,status,stage);
       function closeAllowed(){return !saving && !managing && !editorOpen && (!dirty || doc.defaultView.confirm('Les modifications de cette fiche ne sont pas enregistrées. Fermer ?'));}
-      dialog.addEventListener('cancel',event=>{if(!closeAllowed())event.preventDefault();});
-      dialog.addEventListener('close',()=>{opened.delete(key);dialog.remove();});
+      dialog?.addEventListener('cancel',event=>{if(!closeAllowed())event.preventDefault();});
+      dialog?.addEventListener('close',()=>{opened.delete(key);dialog.remove();});
       const beforeUnload=event=>{if(dirty){event.preventDefault();event.returnValue='';}};
       doc.defaultView.addEventListener('beforeunload',beforeUnload);
-      dialog.addEventListener('close',()=>doc.defaultView.removeEventListener('beforeunload',beforeUnload));
+      dialog?.addEventListener('close',()=>doc.defaultView.removeEventListener('beforeunload',beforeUnload));
       async function request(action,body={}) {
         const url=new URL(config.apiUrl,doc.location.href);
         const options={credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}};
-        if(action){options.method='POST';options.headers['Content-Type']='application/json';options.headers['X-CSRF-Token']=config.csrfToken;options.body=JSON.stringify({action,campaignId:config.campaignId,noteId:config.noteId,...body});}
-        else {url.searchParams.set('campaignId',config.campaignId);url.searchParams.set('noteId',config.noteId);if(body.templateId)url.searchParams.set('templateId',body.templateId);}
+        if(action){options.method='POST';options.headers['Content-Type']='application/json';options.headers['X-CSRF-Token']=config.csrfToken;options.body=JSON.stringify({action,campaignId:config.campaignId,...target,...body});}
+        else {url.searchParams.set('campaignId',config.campaignId);for(const [name,id] of Object.entries(target))url.searchParams.set(name,id);if(body.templateId)url.searchParams.set('templateId',body.templateId);}
         const response=await fetch(url,options);const payload=await response.json();
         if(!response.ok || !payload.success){const error=new Error(payload.error||'Impossible de charger la fiche.');error.status=response.status;throw error;}
         return payload.data;

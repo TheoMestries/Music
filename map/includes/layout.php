@@ -114,7 +114,7 @@ function mapRenderAppHeader(array $currentUser, string $activeNav = 'home'): voi
     <?php
 }
 
-function mapRenderPageStart(string $title, array $currentUser, string $activeNav = 'home', bool $isTable = false): void
+function mapRenderPageStart(string $title, array $currentUser, string $activeNav = 'home', bool $isTable = false, bool $showHeader = true): void
 {
     $bodyClass = $isTable ? 'table-page' : (($_GET['embedded'] ?? null) === '1' ? 'embedded-tool' : '');
     ?>
@@ -128,7 +128,7 @@ function mapRenderPageStart(string $title, array $currentUser, string $activeNav
       </head>
       <body class="<?= $bodyClass ?>">
         <div class="app-layout">
-          <?php if (!$isTable) mapRenderAppHeader($currentUser, $activeNav); ?>
+          <?php if (!$isTable && $showHeader) mapRenderAppHeader($currentUser, $activeNav); ?>
           <main class="content-shell">
     <?php
 }
@@ -139,7 +139,7 @@ function mapRenderPageEnd(array $additionalScripts = [], string $scriptVersion =
           </main>
         </div>
         <script src="<?= mapEscape(mapUrl('/js/windows.js?v=3')) ?>"></script>
-        <script src="<?= mapEscape(mapUrl('/js/character-sheets.js?v=sheets-3')) ?>"></script>
+        <script src="<?= mapEscape(mapUrl('/js/character-sheets.js?v=sheets-4')) ?>"></script>
         <script src="<?= mapEscape(mapUrl('/js/app.js?v=sus20-1')) ?>"></script>
         <?php foreach ($additionalScripts as $script): ?>
           <script src="<?= mapEscape(mapUrl((string) $script) . '?v=' . $scriptVersion) ?>"></script>
