@@ -17,9 +17,6 @@ try {
     $userId = (int) $user['user_id'];
     $permissions = mapCodexPermissionContext($pdo, $campaignId, $access, $userId);
     $canManageCodex = mapCodexCanManage($permissions);
-    if (!mapCodexCanOpen($permissions)) {
-        mapThrowForbidden('Le MJ ne vous a pas encore donné accès au codex.');
-    }
     $url = static fn (array $query = []): string => mapUrlWithQuery('/codex.php', ['campaignId' => $campaignId] + $query);
     $mode = match ($_GET['mode'] ?? null) {
         'import' => 'import',

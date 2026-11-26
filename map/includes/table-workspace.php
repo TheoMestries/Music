@@ -1,6 +1,5 @@
 <?php
 require_once __DIR__ . '/notes.php';
-require_once __DIR__ . '/codex-permissions.php';
 $notesUrl = mapUrlWithQuery('/notes.php', ['campaignId' => $campaignId, 'embedded' => 1]);
 $presentationCursor = mapGetDatabase()->prepare('SELECT event_id FROM campaign_presentations WHERE campaign_id = ?');
 $presentationCursor->execute([$campaignId]);
@@ -39,9 +38,7 @@ $presentationCursor->closeCursor();
             <summary aria-label="Menu de la campagne" title="Menu de la campagne"><span aria-hidden="true">☰</span></summary>
             <div>
               <a href="<?= mapEscape(mapUrlWithQuery('/campaign.php', $managementQuery)) ?>" target="_blank" rel="noopener">Gestion de la campagne</a>
-              <?php if (mapCodexCanOpen(mapCodexPermissionContext(mapGetDatabase(), $campaignId, $access, (int) $currentUser['user_id']))): ?>
-                <a href="<?= mapEscape(mapUrlWithQuery('/codex.php', ['campaignId' => $campaignId])) ?>" target="_blank" rel="noopener">Codex</a>
-              <?php endif; ?>
+              <a href="<?= mapEscape(mapUrlWithQuery('/codex.php', ['campaignId' => $campaignId])) ?>" target="_blank" rel="noopener">Codex</a>
               <?php if (mapCanUseGmNotes($access)): ?>
                 <a href="<?= mapEscape(mapUrlWithQuery('/scenarios.php', ['campaignId' => $campaignId])) ?>" target="_blank" rel="noopener">Scénarios</a>
               <?php endif; ?>

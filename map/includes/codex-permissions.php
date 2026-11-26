@@ -11,7 +11,6 @@ function mapCodexPermissionContext(PDO $pdo, int $campaignId, array $access, int
         'userId' => $userId,
         'modules' => [],
         'entries' => [],
-        'entryCategories' => [],
     ];
     if ($context['manager'] || $role !== 'player') {
         return $context;
@@ -24,15 +23,11 @@ function mapCodexPermissionContext(PDO $pdo, int $campaignId, array $access, int
             'read' => $rule['read'], 'create' => $rule['create'], 'edit' => $rule['edit'],
         ];
     }
-    $statement = $pdo->prepare('SELECT rules.entry_id, rules.user_id, rules.read, rules.edit, entry.category
-        FROM campaign_codex_entry_rules rules
-        JOIN campaign_codex_entries entry ON entry.campaign_id = rules.campaign_id AND entry.id = rules.entry_id
-        WHERE rules.campaign_id = ? AND (rules.user_id IS NULL OR rules.user_id = ?)');
+    $statement = $pdo->prepare('SELECT entry_id, user_id, read, edit FROM campaign_codex_entry_rules
+        WHERE campaign_id = ? AND (user_id IS NULL OR user_id = ?)');
     $statement->execute([$campaignId, $userId]);
     foreach ($statement->fetchAll() as $rule) {
-        $id = (int) $rule['entry_id'];
-        $context['entryCategories'][$id] = $rule['category'];
-        $context['entries'][$id][(int) $rule['user_id']] = ['read' => $rule['read'], 'edit' => $rule['edit']];
+        $context['entries'][(int) $rule['entry_id']][(int) $rule['user_id']] = ['read' => $rule['read'], 'edit' => $rule['edit']];
     }
     return $context;
 }
@@ -76,24 +71,6 @@ function mapCodexCanEdit(array $permissions, string $category, ?int $entryId = n
 function mapCodexCanCreate(array $permissions, string $category): bool
 {
     return mapCodexCanManage($permissions) || mapCodexRuleState($permissions, 'create', $category, null) === 'allow';
-}
-
-function mapCodexCanOpen(array $permissions): bool
-{
-    if (mapCodexCanManage($permissions)) {
-        return true;
-    }
-    foreach ($permissions['modules'] as $category => $rules) {
-        if (mapCodexCanRead($permissions, (string) $category) || mapCodexCanCreate($permissions, (string) $category)) {
-            return true;
-        }
-    }
-    foreach ($permissions['entryCategories'] as $id => $category) {
-        if (mapCodexCanRead($permissions, $category, (int) $id)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 function mapCodexModuleRules(PDO $pdo, int $campaignId): array

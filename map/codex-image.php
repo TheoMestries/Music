@@ -14,9 +14,6 @@ try {
     $access = mapRequireCampaignAccess($campaignId, $user);
     $pdo = mapGetDatabase();
     $permissions = mapCodexPermissionContext($pdo, $campaignId, $access, (int) $user['user_id']);
-    if (!mapCodexCanOpen($permissions)) {
-        mapThrowForbidden();
-    }
     session_write_close();
     $imageId = mapValidatePositiveInt($_GET['imageId'] ?? null, 'Image');
     if (!mapCodexCanReadImage($pdo, $campaignId, $imageId, $permissions)) {

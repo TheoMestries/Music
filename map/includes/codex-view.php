@@ -336,6 +336,9 @@ if ($error !== null && is_string($_POST['body_html'] ?? null)) {
           </form>
         </div>
         <?php if ($mode !== 'favoris' && $category === '' && $search === ''): ?>
+          <?php if ($moduleNames === []): ?>
+            <div class="codex-empty"><p class="muted">Le MJ n’a encore partagé aucune fiche avec vous.</p></div>
+          <?php endif; ?>
           <?php foreach ($moduleGroups as $group => $modules): ?>
             <section class="codex-module-group">
               <h3><?= mapEscape($group) ?></h3>

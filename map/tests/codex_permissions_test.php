@@ -29,7 +29,7 @@ $access = static fn (int $id, int $campaignId = 1): array => mapCodexPermissionC
     mapRequireCampaignAccess($campaignId, ['user_id' => $id]), $id);
 
 assertCodexPermissionTest(mapCodexCanManage($access(1)) && mapCodexCanRead($access(1), 'Lieux', $location), 'Le MJ doit conserver tous les droits.');
-assertCodexPermissionTest(!mapCodexCanOpen($access(2)) && !mapCodexCanRead($access(2), 'Personnages', $profile), 'Une campagne existante doit rester privée tant que le MJ ne partage rien.');
+assertCodexPermissionTest(!mapCodexCanRead($access(2), 'Personnages', $profile), 'Une fiche reste privée tant que le MJ ne la partage pas.');
 
 mapCodexSaveModuleRule($pdo, 1, 'Personnages', 0, ['edit' => 'allow']);
 assertCodexPermissionTest(mapCodexCanRead($access(2), 'Personnages', $profile) && mapCodexCanEdit($access(2), 'Personnages', $profile), 'Une autorisation de modifier implique celle de consulter.');
@@ -49,7 +49,7 @@ mapCodexSaveEntryRule($pdo, 1, $profile, 2, []);
 assertCodexPermissionTest(!mapCodexCanEdit($access(2), 'Personnages', $profile) && !isset(mapCodexEntryRules($pdo, 1, $profile)[2]), 'L’héritage complet doit retirer l’exception individuelle.');
 
 mapCodexSaveEntryRule($pdo, 1, $location, 2, ['read' => 'allow']);
-assertCodexPermissionTest(mapCodexCanOpen($access(2)) && mapCodexCanRead($access(2), 'Lieux', $location)
+assertCodexPermissionTest(mapCodexCanRead($access(2), 'Lieux', $location)
     && !mapCodexCanRead($access(2), 'Lieux'), 'Une fiche peut être ouverte indépendamment du reste de son module.');
 assertCodexPermissionTest(!mapCodexCanRead($access(4, 2), 'Lieux', $secondLocation), 'Les règles restent isolées dans leur campagne.');
 
