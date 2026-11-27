@@ -29,7 +29,8 @@ function mapTokenSheetFields(PDO $pdo, int $noteId): array
     $stmt = $pdo->prepare('SELECT t.fields FROM character_sheets s JOIN character_sheet_templates t ON t.id=s.template_id WHERE s.note_id=?');
     $stmt->execute([$noteId]);
     $fields = json_decode($stmt->fetchColumn() ?: '[]', true);
-    return array_map(static fn(array $field): array => ['id'=>(string)$field['id'],'label'=>$field['label']],$fields);
+    $fields = array_filter($fields, static fn (array $field): bool => ($field['type'] ?? 'text') === 'text');
+    return array_values(array_map(static fn(array $field): array => ['id'=>(string)$field['id'],'label'=>$field['label']],$fields));
 }
 
 function mapValidateTokenOptions(array $options, array $fields): array
@@ -92,7 +93,9 @@ function mapBoardTokenSettings(int $campaignId,int $pageId,int $id,string $layer
     $note = mapGetCampaignNoteRecord($pdo,$campaignId,(int)$entity['note_id']);
     if ((mapDocumentOptions($note)['type'] ?? null) !== 'character') throw new DomainException('Cet élément n’est pas un jeton de personnage.');
     $characters = [];
-    $stmt = $pdo->prepare("SELECT id,title,author_user_id,visibility,options,codex_entry_id,codex_published FROM campaign_notes WHERE campaign_id=? AND json_extract(options,'$.type')='character' ORDER BY title");
+    $stmt = $pdo->prepare("SELECT id,title,author_user_id,visibility,codex_entry_id,codex_published,
+        json_remove(options,'$.image','$.tokenImage','$.gmNotes') AS options
+        FROM campaign_notes WHERE campaign_id=? AND json_extract(options,'$.type')='character' ORDER BY title");
     $stmt->execute([$campaignId]);
     foreach ($stmt as $candidate) {
         if (mapCanViewCampaignNote($candidate,$access,$user) && mapCanEditCampaignNote($candidate,$access,$user)) {

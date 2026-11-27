@@ -1,5 +1,10 @@
 <?php
 declare(strict_types=1);
+
+const MAP_DOCUMENT_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAP_LIBRARY_PORTRAIT_BYTES = 16 * 1024 * 1024;
+const MAP_LIBRARY_PORTRAIT_SOURCE_BYTES = 64 * 1024 * 1024;
+
 function mapDocumentOptions(array $note): array {
  return json_decode($note['options'] ?? '{}',true) ?: [];
 }
@@ -22,17 +27,25 @@ function mapValidateDocumentOptions(array $options, array $note, array $access, 
   $options[$key]=array_values(array_unique($ids));
  }
  $options['gmNotes'] = mapCanUseGmNotes($access) ? mapDocumentHtml(mapValidateNoteContent((string)($options['gmNotes'] ?? ''))) : ($previous['gmNotes'] ?? '');
- $imageValue = $options['image'] ?? ($linked ? ($previous['image'] ?? '') : '');
- $image = $linked && $imageValue === ($previous['image'] ?? '') ? $imageValue : mapValidateDocumentImage((string) $imageValue);
+ $previousImage = $previous['image'] ?? '';
+ $imageValue = $options['image'] ?? $previousImage;
+ $imageLimit = $linked ? MAP_DOCUMENT_IMAGE_BYTES : MAP_LIBRARY_PORTRAIT_BYTES;
+ $image = $imageValue === $previousImage ? $previousImage : mapValidateDocumentImage((string) $imageValue, $imageLimit);
  $tokenImage = mapValidateDocumentImage((string)($options['tokenImage'] ?? ($previous['tokenImage'] ?? '')));
  return ['readers'=>$options['readers'],'editors'=>$options['editors'],'gmNotes'=>$options['gmNotes'],'image'=>$image, 'rich'=>!empty($options['rich']), 'type'=>$previous['type'] ?? 'document', 'tokenImage'=>$tokenImage];
 }
 
-function mapValidateDocumentImage(string $image): string {
+function mapValidateDocumentImage(string $image, int $maxBytes = MAP_DOCUMENT_IMAGE_BYTES): string {
  if ($image !== '') {
-  if (!preg_match('~^data:image/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/=]+)$~D',$image,$m)) throw new DomainException('Image invalide.');
-  $bytes=base64_decode($m[2],true);
-  if ($bytes===false || strlen($bytes)>2097152 || !($info=@getimagesizefromstring($bytes)) || $info['mime'] !== 'image/'.$m[1]) throw new DomainException('Image invalide ou supérieure à 2 Mo.');
+  if (strlen($image) > 32 + 4 * intdiv($maxBytes + 2, 3)) throw new DomainException('L’image dépasse ' . intdiv($maxBytes, 1024 * 1024) . ' Mio.');
+  [$format, $encoded] = array_pad(explode(',', $image, 2), 2, '');
+  if (!preg_match('~^data:(image/(?:png|jpeg|gif|webp));base64$~D', $format, $mime)
+      || $encoded === '' || strspn($encoded, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=') !== strlen($encoded)) {
+      throw new DomainException('Image invalide.');
+  }
+  $bytes=base64_decode($encoded,true);
+  if ($bytes!==false && strlen($bytes)>$maxBytes) throw new DomainException('L’image dépasse ' . intdiv($maxBytes, 1024 * 1024) . ' Mio.');
+  if ($bytes===false || !($info=@getimagesizefromstring($bytes)) || $info['mime'] !== $mime[1]) throw new DomainException('Image invalide.');
  }
  return $image;
 }

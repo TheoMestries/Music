@@ -40,6 +40,9 @@ try {
       data-campaign-id="<?= $campaignId ?>"
       data-api-url="<?= mapEscape(mapUrl('/api/notes.php')) ?>"
       data-csrf-token="<?= mapEscape(mapGetCsrfToken()) ?>"
+      data-image-limit="<?= MAP_DOCUMENT_IMAGE_BYTES ?>"
+      data-portrait-limit="<?= MAP_LIBRARY_PORTRAIT_BYTES ?>"
+      data-portrait-source-limit="<?= MAP_LIBRARY_PORTRAIT_SOURCE_BYTES ?>"
       data-can-use-gm-notes="<?= $canUseGmNotes ? 'true' : 'false' ?>"
     >
       <aside class="notes-sidebar section-block" aria-label="Liste des notes">
@@ -114,8 +117,9 @@ try {
             </select><small>Ctrl / Cmd + clic pour sélectionner plusieurs personnes. Aucune sélection : privé.</small></div>
           <?php endforeach; ?>
           </div>
-          <div class="document-drop" id="document-drop"><label for="document-image">Déposer une image ou choisir un fichier (PNG, JPEG, GIF, WebP · 2 Mo maximum)</label>
+          <div class="document-drop" id="document-drop"><label for="document-image">Déposer une image ou choisir un fichier</label>
           <input id="document-image" type="file" accept="image/png,image/jpeg,image/gif,image/webp">
+          <small id="document-image-help"></small>
           <img id="document-image-preview" alt="Illustration du document" hidden>
           <button id="document-image-remove" type="button" class="button button-secondary">Retirer l’image</button></div>
           <div class="document-drop" id="character-token-drop" hidden>
@@ -150,7 +154,7 @@ try {
       </section>
     </section>
     <?php
-    mapRenderPageEnd(['/js/notes.js'], 'notes-4');
+    mapRenderPageEnd(['/js/notes.js'], 'notes-6');
 } catch (Throwable $exception) {
     mapRenderExceptionPage($exception, 'map/notes', $currentUser);
 }

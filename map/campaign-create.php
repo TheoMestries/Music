@@ -38,7 +38,7 @@ try {
           <select id="template-id" name="template_id">
             <option value="">Aucun modèle</option>
             <?php foreach ($templates as $option): ?>
-              <option value="<?= (int)$option['id'] ?>" <?= (string)$option['id'] === $template ? 'selected' : '' ?>><?= mapEscape($option['name'].' · '.$option['campaign_name']) ?></option>
+              <option value="<?= (int)$option['id'] ?>" <?= (string)$option['id'] === $template ? 'selected' : '' ?>><?= mapEscape($option['name'].' · '.($option['campaign_name'] ?? 'Public')) ?></option>
             <?php endforeach; ?>
           </select>
         </div>

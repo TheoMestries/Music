@@ -37,16 +37,20 @@ try {
     mapEnforceCsrfToken($_SERVER['HTTP_X_CSRF_TOKEN']??null);
     $action=$payload['action']??'';
     if ($codexRights !== null && !$codexRights['canManage']
-        && in_array($action, ['create_template', 'copy_template', 'update_template', 'delete_template'], true)) {
+        && in_array($action, ['create_template', 'copy_template', 'update_template', 'delete_template', 'template_visibility'], true)) {
         mapThrowForbidden('Seul un MJ peut gérer les modèles de fiche.');
     }
-    if (in_array($action, ['copy_template', 'update_template', 'delete_template'], true)) {
+    if (in_array($action, ['copy_template', 'update_template', 'delete_template', 'template_visibility'], true)) {
         $id = mapValidatePositiveInt($payload['templateId'] ?? null, 'Modèle');
         if ($action === 'copy_template') {
             mapJsonSuccess(['template' => mapCopySheetTemplate($campaignId, $id, $user)], 201);
         }
         if ($action === 'delete_template') {
             mapDeleteSheetTemplate($campaignId, $id, $user);
+            mapJsonSuccess();
+        }
+        if ($action === 'template_visibility') {
+            mapSetSheetTemplateVisibility($campaignId, $id, $payload['visibility'] ?? null, $user);
             mapJsonSuccess();
         }
         if (!is_array($payload['pages'] ?? null) || !is_array($payload['fields'] ?? null)) {

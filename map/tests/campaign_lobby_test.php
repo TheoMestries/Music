@@ -24,6 +24,22 @@ $withTemplate = mapCreateCampaignWithTemplate('Campagne avec fiche',1,$template[
 $newCharacter = mapCreateCampaignNote($withTemplate,'Personnage','',null,[],'personal',$owner,'character');
 $defaultSheet = mapGetCharacterSheet($withTemplate,$newCharacter['id'],$owner);
 assertNotesTest($defaultSheet['template']['name']===$template['name'] && $defaultSheet['template']['id']!==$template['id'],'Le modèle est copié et attaché aux nouveaux personnages.');
+mapSetSheetTemplateVisibility(1, $template['id'], 'campaign', $owner);
+assertNotesTest(mapSheetTemplates($id, $playerOne) === [], 'Un modèle partagé dans sa campagne ne s’affiche pas dans une autre.');
+mapSetSheetTemplateVisibility(1, $template['id'], 'public', $owner);
+$published = array_column(mapSheetTemplates($id, $playerOne), null, 'id');
+assertNotesTest($published[$template['id']]['requiresCopy'] && !$published[$template['id']]['isOwner'], 'Le modèle public est proposé à la copie dans une autre campagne.');
+assertNotesTest(mapSheetTemplates($id, $playerTwo) === [], 'Un joueur ne récupère pas un modèle externe dans une campagne où il ne gère pas les fiches.');
+$reusable = array_column(mapReusableSheetTemplates($pdo, $playerOne), null, 'id');
+assertNotesTest(isset($reusable[$template['id']]) && $reusable[$template['id']]['campaign_name'] === null, 'Le modèle public est disponible à la création sans exposer le nom de la campagne source.');
+$localCopy = mapCopySheetTemplate($id, $template['id'], $playerOne);
+assertNotesTest($localCopy['visibility'] === 'private', 'Copier un modèle public crée un modèle privé.');
+$publicDefault = mapCreateCampaignWithTemplate('Campagne avec modèle public', 3, $template['id'], $playerOne);
+assertNotesTest(mapGetCampaignById($publicDefault)['default_sheet_template_id'] !== null, 'Un modèle public peut aussi servir de modèle par défaut.');
+mapSetSheetTemplateVisibility(1, $template['id'], 'private', $owner);
+expectNotesException(MapHttpException::class, 404, static fn () => mapCopySheetTemplate($id, $template['id'], $playerOne), 'Rendre privé empêche les nouvelles copies.');
+assertNotesTest(mapSheetTemplate($id, $localCopy['id'], $playerOne)['fields'] === mapSheetTemplate(1, $template['id'], $owner)['fields'],
+    'Les copies existantes sont indépendantes.');
 mapUpdateCampaignDetails($id,'Campagne renommée',null,$playerOne['user_id'],$playerOne,$avatar);
 $updated = mapGetCampaignById($id);
 assertNotesTest($updated['name']==='Campagne renommée' && $updated['has_cover'],'Le propriétaire joueur peut modifier le nom et la couverture.');

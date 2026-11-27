@@ -10,7 +10,8 @@ function mapCanControlBoardEntity(array $entity, array $note, array $access, arr
 function mapBoardEntities(PDO $pdo, int $pageId, array $user, array $access): array
 {
     $sql = "SELECT e.id,e.layer,e.x,e.y,e.cells,e.author_id,e.note_id,n.title,
-        n.author_user_id,n.visibility,n.options,n.codex_entry_id,n.codex_published,e.token_settings,sheet.field_values AS sheet_values,
+        n.author_user_id,n.visibility,json_remove(n.options,'$.image','$.tokenImage','$.gmNotes') AS options,
+        n.codex_entry_id,n.codex_published,e.token_settings,sheet.field_values AS sheet_values,
         json_extract(n.options,'$.type') AS type,
         (COALESCE(json_extract(n.options,'$.image'),'') <> '' OR
          (json_extract(n.options,'$.type') = 'character' AND COALESCE(json_extract(n.options,'$.tokenImage'),'') <> '')) AS has_image

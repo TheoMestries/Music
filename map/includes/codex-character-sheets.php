@@ -42,11 +42,12 @@ function mapAssignCodexCharacterSheet(PDO $pdo, int $campaignId, int $entryId, i
         }
         $statement = $pdo->prepare("INSERT INTO campaign_codex_character_sheets (entry_id, campaign_id, template_id)
             SELECT ?, campaign_id, id FROM character_sheet_templates WHERE campaign_id = ? AND id = ? AND deleted_at IS NULL
+                AND (author_user_id = ? OR visibility <> 'private')
             ON CONFLICT(entry_id) DO UPDATE SET
                 field_values = CASE WHEN campaign_codex_character_sheets.template_id = excluded.template_id
                     THEN campaign_codex_character_sheets.field_values ELSE '{}' END,
                 template_id = excluded.template_id, revision = campaign_codex_character_sheets.revision + 1");
-        $statement->execute([$entryId, $campaignId, $templateId]);
+        $statement->execute([$entryId, $campaignId, $templateId, (int) $user['user_id']]);
         if (!$statement->rowCount()) {
             mapThrowNotFound('Modèle introuvable.');
         }

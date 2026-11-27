@@ -22,6 +22,26 @@ try {
     if ($method === 'GET') {
         $campaignId = mapValidatePositiveInt($_GET['campaignId'] ?? null, 'Identifiant de campagne');
         $access = mapRequireCampaignAccess($campaignId, $currentUser);
+        if (($_GET['image'] ?? null) === '1') {
+            $noteId = mapValidatePositiveInt($_GET['noteId'] ?? null, 'Document');
+            $note = mapGetCampaignNoteRecord(mapGetDatabase(), $campaignId, $noteId);
+            if ($note === null || !mapCanViewCampaignNote($note, $access, $currentUser)) {
+                mapThrowNotFound('Image introuvable.');
+            }
+            session_write_close();
+            [$format, $encoded] = array_pad(explode(',', mapDocumentOptions($note)['image'] ?? '', 2), 2, '');
+            if (!preg_match('~^data:(image/(?:png|jpeg|gif|webp));base64$~D', $format, $mime)) {
+                mapThrowNotFound('Image introuvable.');
+            }
+            $bytes = base64_decode($encoded, true);
+            if ($bytes === false || $bytes === '') mapThrowNotFound('Image introuvable.');
+            header('Content-Type: ' . $mime[1]);
+            header('Content-Length: ' . strlen($bytes));
+            header('Cache-Control: private, no-store');
+            header('X-Content-Type-Options: nosniff');
+            echo $bytes;
+            exit;
+        }
         $folders = mapListNoteFolders($campaignId, $currentUser);
         $revision = null;
         if (!isset($_GET['noteId'])) {
@@ -36,7 +56,7 @@ try {
             'libraryRevision' => $revision,
             'notes' => isset($_GET['noteId'])
                 ? [mapGetCampaignNote($campaignId, mapValidatePositiveInt($_GET['noteId'], 'Document'), $currentUser)]
-                : mapListCampaignNotes($campaignId, $currentUser),
+                : mapListCampaignNotes($campaignId, $currentUser, ($_GET['imageLinks'] ?? null) === '1'),
             'permissions' => [
                 'canUseGmNotes' => mapCanUseGmNotes($access),
             ],
@@ -44,7 +64,7 @@ try {
     }
 
     mapEnforceCsrfToken(isset($_SERVER['HTTP_X_CSRF_TOKEN']) ? (string) $_SERVER['HTTP_X_CSRF_TOKEN'] : null);
-    $payload = mapReadJsonBody(6500000);
+    $payload = mapReadJsonBody(28 * 1024 * 1024);
     $action = (string) ($payload['action'] ?? '');
     $campaignId = mapValidatePositiveInt($payload['campaignId'] ?? null, 'Identifiant de campagne');
 
@@ -63,6 +83,7 @@ try {
             (string) ($payload['type'] ?? 'document'),
             $payload['options'] ?? null
         );
+        unset($payload);
 
         mapJsonSuccess(['note' => $note], 201);
     }
@@ -89,6 +110,7 @@ try {
             (string) ($payload['visibility'] ?? ''),
             $currentUser, $payload['options'] ?? null
         );
+        unset($payload);
 
         mapJsonSuccess(['note' => $note]);
     }

@@ -1,6 +1,7 @@
 (() => {
   const libraryBase = new URL('../vendor/pdfjs/', document.currentScript.src);
   const opened = new Map();
+  const visibilityLabels = {private: 'Privé', campaign: 'Cette campagne', public: 'Public'};
   let pdfLibrary;
   const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
   window.MapCharacterSheets = {
@@ -31,9 +32,15 @@
         designer(template);
       }));
       const copy=button('Copier le modèle',()=>manageTemplate(async()=>{
+        const requiresCopy = selectedTemplate().requiresCopy;
         const {template}=await request('copy_template',{templateId:Number(chooser.value)});
-        templates([...templateList,{id:template.id,name:template.name,isOwner:true}],template.id);
-        designer(template);
+        rememberTemplate(template);
+        if (requiresCopy) {
+          status.classList.remove('sheet-error');
+          status.textContent = 'Modèle copié dans cette campagne. Cliquez sur « Utiliser ce modèle » pour l’attribuer à la fiche.';
+        } else {
+          designer(template);
+        }
       }));
       const removeTemplate=button('Supprimer le modèle',()=>manageTemplate(async()=>{
         const selected=selectedTemplate();
@@ -43,11 +50,32 @@
         status.classList.remove('sheet-error');
         status.textContent='Modèle supprimé.';
       }));
+      const visibilityControls = make('div', null, 'sheet-template-visibility');
+      const visibility = make('select');
+      visibility.append(new Option('Privé · créateur', 'private'), new Option('Cette campagne', 'campaign'), new Option('Public · toutes les campagnes', 'public'));
+      const visibilityLabel = make('label', 'Visibilité du modèle');
+      visibilityLabel.append(visibility);
+      const applyVisibility = button('Appliquer', () => {
+        const nextVisibility = visibility.value;
+        manageTemplate(async () => {
+          const selected = selectedTemplate();
+          await request('template_visibility', {templateId: selected.id, visibility: nextVisibility});
+          selected.visibility = nextVisibility;
+          templates(templateList, selected.id);
+          status.classList.remove('sheet-error');
+          status.textContent = 'Visibilité du modèle enregistrée.';
+        });
+      });
+      visibility.addEventListener('change', () => {
+        applyVisibility.disabled = visibility.value === selectedTemplate()?.visibility;
+      });
+      visibilityControls.hidden = true;
+      visibilityControls.append(visibilityLabel, applyVisibility);
       const save=button('Enregistrer la fiche',()=>saveValues());
       chooser.hidden=attach.hidden=create.hidden=edit.hidden=copy.hidden=removeTemplate.hidden=save.hidden=true;
       if (dialog) tools.append(button('Bio & infos',()=>{if(closeAllowed()){dialog.close();config.onBio?.();}}));
       tools.append(chooser,attach,create,edit,copy,removeTemplate,save);
-      floating.body.replaceChildren(tools,status,stage);
+      floating.body.replaceChildren(tools,visibilityControls,status,stage);
       function closeAllowed(){return !saving && !managing && !editorOpen && (!dirty || doc.defaultView.confirm('Les modifications de cette fiche ne sont pas enregistrées. Fermer ?'));}
       dialog?.addEventListener('cancel',event=>{if(!closeAllowed())event.preventDefault();});
       dialog?.addEventListener('close',()=>{opened.delete(key);dialog.remove();});
@@ -68,13 +96,18 @@
       function selectedTemplate(){return templateList.find(item=>String(item.id)===chooser.value);}
       function templateActions(){
         const selected=selectedTemplate();
+        const ownsLocalTemplate = selected?.isOwner && !selected.requiresCopy;
         chooser.hidden=!permissions.canManage && !templateList.length;
         attach.hidden=create.hidden=!permissions.canManage;
-        edit.hidden=removeTemplate.hidden=!selected?.isOwner;
-        copy.hidden=!selected || selected.isOwner;
+        edit.hidden=removeTemplate.hidden=visibilityControls.hidden=!ownsLocalTemplate;
+        copy.hidden=!selected || ownsLocalTemplate;
+        copy.textContent=selected?.requiresCopy ? 'Copier dans cette campagne' : 'Copier le modèle';
         chooser.disabled=managing || editorOpen;
         create.disabled=edit.disabled=copy.disabled=removeTemplate.disabled=chooser.disabled;
-        attach.disabled=saving || chooser.disabled || !selected;
+        attach.disabled=saving || chooser.disabled || !selected || selected.requiresCopy;
+        visibility.value = selected?.visibility ?? 'private';
+        visibility.disabled = chooser.disabled;
+        applyVisibility.disabled = true;
       }
       chooser.addEventListener('change',templateActions);
       async function manageTemplate(task){
@@ -86,9 +119,24 @@
       function templates(list,selected){
         templateList=[...list].sort((a,b)=>a.name.localeCompare(b.name) || a.id-b.id);
         chooser.replaceChildren(new Option('Choisir un modèle…',''));
-        templateList.forEach(item=>chooser.append(new Option(item.name,String(item.id))));
+        const local = make('optgroup');
+        local.label = 'Modèles de cette campagne';
+        const reusable = make('optgroup');
+        reusable.label = 'Modèles à copier dans cette campagne';
+        for (const template of templateList) {
+          const label = visibilityLabels[template.visibility];
+          const option = new Option(label ? template.name + ' · ' + label : template.name, String(template.id));
+          (template.requiresCopy ? reusable : local).append(option);
+        }
+        for (const group of [local, reusable]) {
+          if (group.children.length) chooser.append(group);
+        }
         chooser.value=templateList.some(item=>item.id===selected)?String(selected):'';
         templateActions();
+      }
+      function rememberTemplate(template) {
+        const {id, name, visibility} = template;
+        templates([...templateList.filter(item => item.id !== id), {id, name, visibility, isOwner: true, requiresCopy: false}], id);
       }
       async function load(){await run(async()=>{
         const data=await request();sheet=data.sheet;permissions=data;
@@ -100,14 +148,37 @@
         status.classList.remove('sheet-error');
         if(!sheet){status.textContent=permissions.canManage?'Choisissez un modèle existant ou créez-en un à partir d’une image ou d’un PDF.':'Le MJ n’a pas encore choisi de modèle pour ce personnage.';save.disabled=true;return;}
         save.disabled=!permissions.canEdit;
-        status.textContent=permissions.canEdit?'Remplissez les zones, puis enregistrez la fiche.':'Fiche en lecture seule.';
+        status.textContent=permissions.canEdit?'Remplissez la fiche, puis enregistrez-la.':'Fiche en lecture seule.';
         sheet.template.pages.forEach((image,index)=>{
           const page=make('div',null,'sheet-page');const img=make('img');img.src=image;img.alt='Page '+(index+1);img.draggable=false;page.append(img);
           sheet.template.fields.filter(field=>field.page===index).forEach(field=>{
-            const input=make('textarea',null,'sheet-value');input.value=sheet.values[field.id] || '';input.setAttribute('aria-label',field.label);input.title=field.label;
-            input.readOnly=!permissions.canEdit;input.maxLength=10000;input.spellcheck=false;
-            position(input,field);input.style.fontSize=(field.font*100)+'cqw';
-            input.addEventListener('input',()=>{sheet.values[field.id]=input.value;dirty=true;editVersion++;status.textContent='Modifications non enregistrées.';});page.append(input);
+            const isCheckbox = field.type === 'checkbox';
+            const input = make(isCheckbox ? 'input' : 'textarea', null, isCheckbox ? null : 'sheet-value');
+            const zone = isCheckbox ? make('label', null, 'sheet-checkbox') : input;
+            input.setAttribute('aria-label', field.label);
+            zone.title = field.label;
+            if (isCheckbox) {
+              input.type = 'checkbox';
+              input.checked = sheet.values[field.id] === true;
+              input.disabled = !permissions.canEdit;
+              const mark = make('span', '✓');
+              mark.setAttribute('aria-hidden', 'true');
+              zone.append(input, mark);
+            } else {
+              input.value = sheet.values[field.id] || '';
+              input.readOnly = !permissions.canEdit;
+              input.maxLength = 10000;
+              input.spellcheck = false;
+              input.style.fontSize = (field.font * 100) + 'cqw';
+            }
+            position(zone, field);
+            input.addEventListener('input', () => {
+              sheet.values[field.id] = isCheckbox ? input.checked : input.value;
+              dirty = true;
+              editVersion++;
+              status.textContent = 'Modifications non enregistrées.';
+            });
+            page.append(zone);
           });stage.append(page);
         });
       }
@@ -128,8 +199,12 @@
         const name=make('input');name.placeholder='Nom du modèle';name.maxLength=160;name.setAttribute('aria-label','Nom du modèle');
         name.value=template?.name ?? '';
         const upload=make('input');upload.type='file';upload.accept='application/pdf,image/png,image/jpeg,image/gif,image/webp,image/avif';upload.multiple=true;upload.setAttribute('aria-label','Importer les pages du modèle');
-        const info=make('p',template?'Sélectionnez une zone pour la modifier ou tracez une nouvelle zone.':'Importez une image ou un PDF, puis tracez les zones de texte sur les pages.','sheet-status');info.setAttribute('aria-live','polite');
+        const info=make('p',template?'Sélectionnez une zone pour la modifier ou tracez une nouvelle zone.':'Importez une image ou un PDF, puis tracez les zones de texte et les cases à cocher sur les pages.','sheet-status');info.setAttribute('aria-live','polite');
         const mode=button('Tracer des zones : activé',()=>{drawing=!drawing;mode.textContent='Tracer des zones : '+(drawing?'activé':'désactivé');mode.setAttribute('aria-pressed',String(drawing));});mode.setAttribute('aria-pressed','true');
+        const drawType = make('select');
+        drawType.append(new Option('Texte', 'text'), new Option('Case à cocher', 'checkbox'));
+        const drawTypeLabel = make('label', 'Type des nouvelles zones');
+        drawTypeLabel.append(drawType);
         const label=make('input');label.placeholder='Nom de la zone sélectionnée';label.setAttribute('aria-label','Nom de la zone');label.maxLength=160;
         const font=make('input');font.type='number';font.min='5';font.max='80';font.value='15';font.setAttribute('aria-label','Taille du texte pour une page de 1000 pixels');
         const remove=button('Supprimer la zone',()=>{fields=fields.filter(f=>f.id!==selected);selected=null;changed=true;renderDesigner();});
@@ -148,7 +223,7 @@
           try{
             const data=await request(template?'update_template':'create_template',{templateId:template?.id,name:name.value.trim(),pages,fields});
             const saved=data.template;
-            templates([...templateList.filter(item=>item.id!==saved.id),{id:saved.id,name:saved.name,isOwner:true}],saved.id);
+            rememberTemplate(saved);
             changed=false;editor.close();
             await run(async()=>{
               if(sheet?.template.id===saved.id && !dirty && !saving){
@@ -162,20 +237,46 @@
           }catch(error){info.textContent=error.message;info.classList.add('sheet-error');}
           finally{busy=false;saveTemplate.disabled=false;upload.disabled=false;}
         });
-        controls.append(nameLabel,upload,mode,zoneLabel,fontLabel,remove,saveTemplate);
+        controls.append(nameLabel,upload,mode,drawTypeLabel,zoneLabel,fontLabel,remove,saveTemplate);
         const canvas=make('div',null,'sheet-pages');view.body.append(controls,info,canvas);
         name.addEventListener('input',()=>changed=true);
         function selectedField(){return fields.find(f=>f.id===selected);}
-        label.addEventListener('input',()=>{const f=selectedField();if(f){f.label=label.value;changed=true;const n=canvas.querySelector('[data-field="'+f.id+'"]');if(n)n.firstChild.textContent=f.label;}});
+        function describeZone(zone, field) {
+          zone.firstChild.textContent = field.type === 'checkbox' ? '✓' : field.label;
+          zone.title = field.label;
+          zone.setAttribute('aria-label', field.label + ' — flèches pour déplacer, Maj + flèches pour redimensionner');
+        }
+        label.addEventListener('input', () => {
+          const field = selectedField();
+          if (!field) return;
+          field.label = label.value;
+          changed = true;
+          const zone = canvas.querySelector('[data-field="' + field.id + '"]');
+          if (zone) describeZone(zone, field);
+        });
         font.addEventListener('change',()=>{const f=selectedField();if(f){f.font=clamp(Number(font.value)||15,5,80)/1000;changed=true;}});
-        function select(id){selected=id;const f=selectedField();label.value=f?.label||'';font.value=f?Math.round(f.font*1000):15;label.disabled=font.disabled=remove.disabled=!f;canvas.querySelectorAll('.sheet-zone').forEach(n=>n.classList.toggle('selected',n.dataset.field===id));}
+        function select(id) {
+          selected = id;
+          const field = selectedField();
+          label.value = field?.label || '';
+          font.value = field ? Math.round(field.font * 1000) : 15;
+          label.disabled = remove.disabled = !field;
+          fontLabel.hidden = field?.type === 'checkbox';
+          font.disabled = !field || fontLabel.hidden;
+          canvas.querySelectorAll('.sheet-zone').forEach(zone => zone.classList.toggle('selected', zone.dataset.field === id));
+        }
         function renderDesigner(){
           canvas.replaceChildren();pages.forEach((image,index)=>{
             const page=make('div',null,'sheet-page sheet-edit-page');const img=make('img');img.src=image;img.alt='Page '+(index+1);img.draggable=false;page.append(img);canvas.append(page);
             fields.filter(f=>f.page===index).forEach(f=>{
-              const zone=make('div',null,'sheet-zone');zone.dataset.field=f.id;position(zone,f);zone.append(make('span',f.label));
+              const zone=make('div',null,'sheet-zone');
+              zone.dataset.field=f.id;
+              zone.dataset.type=f.type || 'text';
+              position(zone,f);
+              zone.append(make('span'));
+              describeZone(zone,f);
               const handle=make('span','↘','sheet-zone-resize');handle.setAttribute('aria-hidden','true');zone.append(handle);
-              zone.tabIndex=0;zone.setAttribute('aria-label',f.label+' — flèches pour déplacer, Maj + flèches pour redimensionner');
+              zone.tabIndex=0;
               zone.addEventListener('focus',()=>select(f.id));
               zone.addEventListener('keydown',event=>{
                 if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Delete'].includes(event.key))return;
@@ -195,8 +296,16 @@
               if(target){f=fields.find(v=>v.id===target.dataset.field);node=target;kind=event.target.closest('.sheet-zone-resize')?'resize':'move';select(f.id);origin={...f};}
               else{
                 if(!drawing || fields.length>=300)return;
-                f={id:'f_'+crypto.randomUUID().replaceAll('-',''),page:index,label:'Zone '+(fields.length+1),x:start.x,y:start.y,w:0,h:0,font:.015};kind='draw';
-                node=make('div',f.label,'sheet-zone selected');page.append(node);position(node,f);
+                const type = drawType.value;
+                const defaultLabel = (type === 'checkbox' ? 'Case ' : 'Zone ') + (fields.length + 1);
+                f={id:'f_'+crypto.randomUUID().replaceAll('-',''),page:index,type,label:defaultLabel,x:start.x,y:start.y,w:0,h:0,font:.015};
+                kind='draw';
+                node=make('div',null,'sheet-zone selected');
+                node.dataset.type=type;
+                node.append(make('span'));
+                describeZone(node,f);
+                page.append(node);
+                position(node,f);
               }
               event.preventDefault();page.setPointerCapture(event.pointerId);
               function drag(e){const p=point(e);if(kind==='move'){f.x=clamp(origin.x+p.x-start.x,0,1-f.w);f.y=clamp(origin.y+p.y-start.y,0,1-f.h);}else if(kind==='resize'){f.w=clamp(origin.w+p.x-start.x,.005,1-f.x);f.h=clamp(origin.h+p.y-start.y,.005,1-f.y);}else{f.x=Math.min(start.x,p.x);f.y=Math.min(start.y,p.y);f.w=Math.abs(p.x-start.x);f.h=Math.abs(p.y-start.y);}position(node,f);}

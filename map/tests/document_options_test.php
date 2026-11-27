@@ -29,5 +29,15 @@ expectNotesException(DomainException::class, 0, static fn()=>mapCreateCampaignNo
     'image' => 'invalide',
 ]), 'Une image invalide empêche la création.');
 assertNotesTest(count(mapListCampaignNotes(1, $owner)) === $before, 'Un premier enregistrement refusé ne laisse pas de note.');
+$png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jMqQAAAAASUVORK5CYII=');
+$portrait = 'data:image/png;base64,' . base64_encode(str_pad($png, 3 * 1024 * 1024, "\0"));
+expectNotesException(DomainException::class, 0, static fn () => mapValidateDocumentImage($portrait), 'Les autres usages conservent la limite habituelle.');
+$character = mapCreateCampaignNote(1, 'Portrait de test', '', null, [], 'personal', $owner, 'character', ['image' => $portrait]);
+$edited = mapUpdateCampaignNote(1, $character['id'], $character['revision'], 'Portrait renommé', '', null, [], 'personal', $owner, ['rich' => true]);
+assertNotesTest($edited['options']['image'] === $portrait, 'Une modification qui omet le portrait conserve le fichier enregistré.');
+$list = array_column(mapListCampaignNotes(1, $owner, true), null, 'id');
+assertNotesTest(str_contains($list[$character['id']]['options']['image'], 'noteId=' . $character['id'] . '&image=1'), 'La liste peut remplacer les données du portrait par un lien.');
+$deleted = mapUpdateCampaignNote(1, $character['id'], $edited['revision'], 'Portrait renommé', '', null, [], 'personal', $owner, ['image' => '']);
+assertNotesTest($deleted['options']['image'] === '', 'Une valeur vide retire explicitement le portrait.');
 echo "OK - options, permissions individuelles, secrets MJ et HTML.
 ";

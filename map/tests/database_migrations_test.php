@@ -41,7 +41,7 @@ $currentDatabaseCopyPath = $testDirectory . DIRECTORY_SEPARATOR . 'current.sqlit
 
 try {
     $freshPdo = mapOpenDatabase($freshDatabasePath);
-    assertMigrationTest(mapCurrentDatabaseVersion($freshPdo) === 35, 'La base vierge doit atteindre la version 35.');
+    assertMigrationTest(mapCurrentDatabaseVersion($freshPdo) === 36, 'La base vierge doit atteindre la version 36.');
 
     foreach (['users', 'campaigns', 'campaign_members', 'campaign_notes', 'campaign_note_tags', 'dice_rolls', 'system_settings', 'schema_migrations', 'campaign_presentations', 'campaign_note_folders', 'character_sheet_templates', 'character_sheets', 'campaign_board_pages', 'campaign_board_state', 'campaign_board_views', 'board_drawings', 'board_measurements', 'campaign_chat', 'board_entities', 'campaign_codex_entries', 'campaign_codex_links', 'campaign_codex_media', 'campaign_codex_favorites', 'campaign_codex_history', 'campaign_codex_module_rules', 'campaign_codex_entry_rules', 'campaign_codex_element_rules', 'campaign_codex_element_create_rules', 'campaign_codex_character_sheets'] as $table) {
         assertMigrationTest(tableExists($freshPdo, $table), 'Table manquante dans la base vierge : ' . $table);
@@ -52,7 +52,7 @@ try {
     assertMigrationTest(mapTableHasColumn($freshPdo, 'campaigns', 'is_archived'), 'Colonne campaigns.is_archived manquante.');
     assertMigrationTest(mapTableHasColumn($freshPdo, 'campaigns', 'updated_at'), 'Colonne campaigns.updated_at manquante.');
     assertMigrationTest(mapTableHasColumn($freshPdo, 'campaign_members', 'updated_at'), 'Colonne campaign_members.updated_at manquante.');
-    assertMigrationTest((int) $freshPdo->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn() === 35, 'Historique de migrations incomplet.');
+    assertMigrationTest((int) $freshPdo->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn() === 36, 'Historique de migrations incomplet.');
     $freshPdo = null;
 
     $v22 = new PDO('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
@@ -66,7 +66,10 @@ try {
     $v22->exec("INSERT INTO users (username,display_name,password_hash,role) VALUES
         ('mj-version-22','MJ version 22','test-hash','gm'),('autre-mj','Autre MJ','test-hash','gm')");
     $v22->exec("INSERT INTO campaigns (name,owner_user_id) VALUES ('Campagne version 22',1)");
+    $v22->exec("INSERT INTO character_sheet_templates (campaign_id,author_user_id,name,pages,fields) VALUES (1,1,'Modèle historique','[]','[]')");
     mapRunDatabaseMigrations($v22);
+    assertMigrationTest($v22->query('SELECT visibility FROM character_sheet_templates WHERE id=1')->fetchColumn() === 'campaign',
+        'Un ancien modèle reste disponible dans sa campagne sans devenir public.');
     assertMigrationTest((int)$v22->query('SELECT creator_user_id FROM campaigns')->fetchColumn() === 1, 'La version 22 sans créateur doit être mise à niveau.');
     $v22->exec('UPDATE campaigns SET owner_user_id=2');
     $v22->exec('DELETE FROM schema_migrations WHERE version=23');
@@ -88,18 +91,18 @@ try {
     $legacyPdo = null;
 
     $migratedLegacyPdo = mapOpenDatabase($legacyDatabasePath);
-    assertMigrationTest(mapCurrentDatabaseVersion($migratedLegacyPdo) === 35, 'La base historique doit atteindre la version 35.');
+    assertMigrationTest(mapCurrentDatabaseVersion($migratedLegacyPdo) === 36, 'La base historique doit atteindre la version 36.');
     assertMigrationTest((int) $migratedLegacyPdo->query('SELECT COUNT(*) FROM users')->fetchColumn() === 1, 'L utilisateur historique a ete perdu.');
     assertMigrationTest((int) $migratedLegacyPdo->query('SELECT COUNT(*) FROM campaigns')->fetchColumn() === 1, 'La campagne historique a ete perdue.');
     assertMigrationTest((string) $migratedLegacyPdo->query('SELECT name FROM campaigns WHERE id = 1')->fetchColumn() === 'Campagne conservee', 'La campagne historique a ete modifiee.');
     mapRunDatabaseMigrations($migratedLegacyPdo);
-    assertMigrationTest((int) $migratedLegacyPdo->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn() === 35, 'Une migration a ete rejouee.');
+    assertMigrationTest((int) $migratedLegacyPdo->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn() === 36, 'Une migration a ete rejouee.');
     $migratedLegacyPdo = null;
 
     if (is_file(mapDatabasePath())) {
         assertMigrationTest(copy(mapDatabasePath(), $currentDatabaseCopyPath), 'Impossible de copier la base actuelle pour le test.');
         $currentCopyPdo = mapOpenDatabase($currentDatabaseCopyPath);
-        assertMigrationTest(mapCurrentDatabaseVersion($currentCopyPdo) === 35, 'La copie de la base actuelle doit atteindre la version 35.');
+        assertMigrationTest(mapCurrentDatabaseVersion($currentCopyPdo) === 36, 'La copie de la base actuelle doit atteindre la version 36.');
         $currentCopyPdo = null;
     }
 

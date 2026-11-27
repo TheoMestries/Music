@@ -124,7 +124,7 @@ function mapRenderPageStart(string $title, array $currentUser, string $activeNav
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title><?= mapEscape($title) ?> - <?= mapEscape(MAP_APP_NAME) ?></title>
-        <link rel="stylesheet" href="<?= mapEscape(mapUrl('/css/map.css?v=board-settings-1')) ?>">
+        <link rel="stylesheet" href="<?= mapEscape(mapUrl('/css/map.css?v=sheets-6')) ?>">
       </head>
       <body class="<?= $bodyClass ?>">
         <div class="app-layout">
@@ -139,7 +139,7 @@ function mapRenderPageEnd(array $additionalScripts = [], string $scriptVersion =
           </main>
         </div>
         <script src="<?= mapEscape(mapUrl('/js/windows.js?v=3')) ?>"></script>
-        <script src="<?= mapEscape(mapUrl('/js/character-sheets.js?v=sheets-4')) ?>"></script>
+        <script src="<?= mapEscape(mapUrl('/js/character-sheets.js?v=sheets-6')) ?>"></script>
         <script src="<?= mapEscape(mapUrl('/js/app.js?v=sus20-1')) ?>"></script>
         <?php foreach ($additionalScripts as $script): ?>
           <script src="<?= mapEscape(mapUrl((string) $script) . '?v=' . $scriptVersion) ?>"></script>
@@ -159,7 +159,7 @@ function mapRenderStatusPage(string $title, string $message, int $statusCode, ?a
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title><?= mapEscape($title) ?> - <?= mapEscape(MAP_APP_NAME) ?></title>
-        <link rel="stylesheet" href="<?= mapEscape(mapUrl('/css/map.css?v=board-settings-1')) ?>">
+        <link rel="stylesheet" href="<?= mapEscape(mapUrl('/css/map.css?v=sheets-6')) ?>">
       </head>
       <body class="<?= isset($_GET['embedded']) && $_GET['embedded'] === '1' ? 'embedded-tool' : '' ?>">
         <?php if ($currentUser !== null): ?>

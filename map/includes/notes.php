@@ -112,14 +112,17 @@ function mapCanUseGmNotes(array $access): bool
     return in_array((string) ($access['current_user_role'] ?? ''), ['admin', 'owner', 'gm'], true);
 }
 
-function mapGetCampaignNoteRecord(PDO $pdo, int $campaignId, int $noteId): ?array
+function mapGetCampaignNoteRecord(PDO $pdo, int $campaignId, int $noteId, bool $replacingImage = false): ?array
 {
+    $options = $replacingImage
+        ? "CASE WHEN n.codex_entry_id IS NULL THEN json_remove(n.options, '$.image') ELSE n.options END AS options"
+        : 'n.options';
     $statement = $pdo->prepare(
         'SELECT n.id,
                 n.campaign_id,
                 n.author_user_id,
                 n.title,
-                n.content, n.options, n.codex_entry_id, n.codex_published,
+                n.content, ' . $options . ', n.codex_entry_id, n.codex_published,
                 entry.title AS codex_title, entry.body AS codex_body, entry.body_html AS codex_body_html,
                 n.folder,
                 n.visibility,
@@ -210,13 +213,15 @@ function mapPublicNoteData(PDO $pdo, array $note, array $access, array $currentU
         $displayContent = mapCodexRichMentionMarkup($content, mapCodexEntries($pdo, $campaignId),
             static fn (array $query): string => mapUrlWithQuery('/codex.php', ['campaignId' => $campaignId] + $query));
     }
+    $options = mapDocumentOptions($note);
+    $options['gmNotes'] = mapCanUseGmNotes($access) ? ($options['gmNotes'] ?? '') : '';
     return [
         'id' => (int) $note['id'],
         'campaignId' => (int) $note['campaign_id'],
         'title' => $linked ? $note['codex_title'] : (string) $note['title'],
         'codexEntryId' => $linked ? (int) $note['codex_entry_id'] : null,
         'displayContent' => $displayContent,
-        'options' => array_merge(mapDocumentOptions($note), ['gmNotes' => mapCanUseGmNotes($access) ? (mapDocumentOptions($note)['gmNotes'] ?? '') : '']),
+        'options' => $options,
         'content' => $content,
         'folder' => $note['folder'] !== null ? (string) $note['folder'] : null,
         'tags' => mapGetCampaignNoteTags($pdo, (int) $note['id']),
@@ -235,21 +240,31 @@ function mapPublicNoteData(PDO $pdo, array $note, array $access, array $currentU
     ];
 }
 
-function mapListCampaignNotes(int $campaignId, array $currentUser): array
+function mapListCampaignNotes(int $campaignId, array $currentUser, bool $imageLinks = false): array
 {
     $access = mapRequireCampaignAccess($campaignId, $currentUser);
     $pdo = mapGetDatabase();
     return array_map(
-        static fn(array $note): array => mapPublicNoteData($pdo, $note, $access, $currentUser),
-        mapVisibleCampaignNoteRows($pdo, $campaignId, $access, $currentUser)
+        static function (array $note) use ($pdo, $access, $currentUser, $campaignId): array {
+            $data = mapPublicNoteData($pdo, $note, $access, $currentUser);
+            if (!empty($note['has_image'])) {
+                $data['options']['image'] = mapUrlWithQuery('/api/notes.php', ['campaignId' => $campaignId, 'noteId' => $data['id'], 'image' => 1]);
+            }
+            return $data;
+        },
+        mapVisibleCampaignNoteRows($pdo, $campaignId, $access, $currentUser, imageLinks: $imageLinks)
     );
 }
 
-function mapVisibleCampaignNoteRows(PDO $pdo, int $campaignId, array $access, array $currentUser, bool $summary = false): array
+function mapVisibleCampaignNoteRows(PDO $pdo, int $campaignId, array $access, array $currentUser, bool $summary = false, bool $imageLinks = false): array
 {
+    $options = $imageLinks
+        ? "json_remove(n.options, '$.image', '$.tokenImage') AS options,
+           COALESCE(length(json_extract(n.options, '$.image')), 0) > 0 AS has_image"
+        : 'n.options';
     $documentFields = $summary
         ? "json_remove(n.options, '$.image', '$.tokenImage', '$.gmNotes') AS options"
-        : 'n.content, n.options, entry.title AS codex_title, entry.body AS codex_body, entry.body_html AS codex_body_html';
+        : "n.content, $options, entry.title AS codex_title, entry.body AS codex_body, entry.body_html AS codex_body_html";
     $join = $summary ? '' : 'LEFT JOIN campaign_codex_entries entry ON entry.id = n.codex_entry_id AND entry.campaign_id = n.campaign_id';
     $statement = $pdo->prepare(
         "SELECT n.id,
@@ -376,6 +391,7 @@ function mapCreateCampaignNote(
             ':visibility' => $visibility,
         ]);
         $noteId = (int) $pdo->lastInsertId();
+        unset($statement, $validatedOptions);
         if ($type === 'character' && $access['campaign']['default_sheet_template_id'] !== null) {
             $pdo->prepare('INSERT INTO character_sheets(note_id,template_id)
                 SELECT ?,t.id FROM campaigns c JOIN character_sheet_templates t ON t.id=c.default_sheet_template_id
@@ -409,7 +425,7 @@ function mapUpdateCampaignNote(
 ): array {
     $access = mapRequireCampaignAccess($campaignId, $currentUser);
     $pdo = mapGetDatabase();
-    $note = mapGetCampaignNoteRecord($pdo, $campaignId, $noteId);
+    $note = mapGetCampaignNoteRecord($pdo, $campaignId, $noteId, replacingImage: isset($options['image']));
 
     if ($note === null || !mapCanViewCampaignNote($note, $access, $currentUser)) {
         mapThrowNotFound('Note introuvable.');
@@ -464,7 +480,10 @@ function mapUpdateCampaignNote(
             ':revision' => $expectedRevision,
         ]);
 
-        if ($statement->rowCount() !== 1) {
+        $updated = $statement->rowCount() === 1;
+        unset($statement);
+        if (!$updated) {
+            unset($note, $validatedOptions);
             $pdo->rollBack();
             throw new MapNoteConflictException(mapGetCampaignNote($campaignId, $noteId, $currentUser));
         }
@@ -473,6 +492,7 @@ function mapUpdateCampaignNote(
         if ($linked) {
             mapSyncLibraryNoteToCodex($pdo, $note, $title, $content, $validatedOptions, (int) $currentUser['user_id']);
         }
+        unset($note, $validatedOptions);
         mapTouchCampaign($pdo, $campaignId);
         $pdo->commit();
     } catch (Throwable $exception) {

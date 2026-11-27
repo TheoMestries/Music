@@ -1231,7 +1231,10 @@ dialog#table-document.floating-window { padding: 0; }
 dialog.floating-window.sheet-window { width: min(1120px,96vw); height: 88dvh; }
 .sheet-toolbar, .sheet-designer-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 16px; }
 .sheet-toolbar select { flex: 1; width: auto; min-width: 200px; }
+.sheet-template-visibility:not([hidden]) { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+.sheet-template-visibility label { display: grid; gap: 6px; font-size: 13px; }
 .sheet-designer-controls label { display: grid; gap: 6px; flex: 1; min-width: 160px; font-size: 13px; }
+.sheet-designer-controls label[hidden] { display: none; }
 .sheet-designer-controls input[type=file] { flex-basis: 100%; }
 .sheet-designer-controls input[type=number] { width: 90px; }
 .sheet-status { line-height: 1.5; color: var(--text-soft); }
@@ -1242,11 +1245,41 @@ dialog.floating-window.sheet-window { width: min(1120px,96vw); height: 88dvh; }
 .sheet-value { position: absolute; min-height: 0; min-width: 0; margin: 0; padding: 0 2px; resize: none; border: 1px solid transparent; border-radius: 0; outline-offset: 0; background: transparent; color: #111; line-height: 1.2; font-family: Arial,sans-serif; overflow: auto; }
 .sheet-value:not([readonly]):hover { background: #a8c9ff44; border-color: #508dde; }
 .sheet-value:focus { background: #ffffffcc; border-color: #285eca; outline: 1px solid #285eca; }
+.sheet-checkbox {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  container-type: size;
+  color: #111;
+}
+.sheet-checkbox input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+}
+.sheet-checkbox input:enabled { cursor: pointer; }
+.sheet-checkbox:has(input:enabled:hover) { background: #a8c9ff44; outline: 1px solid #508dde; }
+.sheet-checkbox:focus-within { outline: 2px solid #285eca; }
+.sheet-checkbox span {
+  visibility: hidden;
+  pointer-events: none;
+  font: 700 96cqmin/1 system-ui, sans-serif;
+}
+.sheet-checkbox input:checked + span { visibility: visible; }
 .sheet-edit-page { touch-action: none; cursor: crosshair; }
 .sheet-zone { position: absolute; min-width: 0; min-height: 0; border: 1px dashed #1f59ba; background: #608fee22; color: #123d83; cursor: move; touch-action: none; }
 .sheet-zone > span:first-child { display: block; overflow: hidden; white-space: nowrap; font: 12px Arial,sans-serif; pointer-events: none; }
 .sheet-zone.selected { border: 2px solid #1148aa; background: #608fee44; z-index: 1; }
+.sheet-zone[data-type="checkbox"] { display: grid; place-items: center; }
 .sheet-zone-resize { position: absolute; bottom: -3px; right: -3px; width: 18px; height: 18px; background: #1148aa; color: white; font-size: 14px; text-align: center; cursor: nwse-resize; }
+.sheet-zone[data-type="checkbox"] .sheet-zone-resize { transform: translate(55%, 55%); }
+.sheet-zone[data-type="checkbox"]:not(.selected) .sheet-zone-resize { visibility: hidden; }
 
 .character-summary { display: flex; flex-direction: column; gap: 18px; }
 .character-details { order: 0; min-width: 0; }

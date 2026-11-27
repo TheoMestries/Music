@@ -91,13 +91,18 @@
   const gmNotes = document.querySelector('#document-gm');
   const imageInput = document.querySelector('#document-image');
   const imagePreview = document.querySelector('#document-image-preview');
+  const imageHelp = document.querySelector('#document-image-help');
   const removeImage = document.querySelector('#document-image-remove');
   const tokenInput = document.querySelector('#character-token');
   const tokenPreview = document.querySelector('#character-token-preview');
   const tokenRemove = document.querySelector('#character-token-remove');
   const tokenDrop = document.querySelector('#character-token-drop');
+  const imageTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+  const imageLimit = Number(root.dataset.imageLimit);
+  const portraitLimit = Number(root.dataset.portraitLimit);
+  const portraitSourceLimit = Number(root.dataset.portraitSourceLimit);
+  const inMib = bytes => `${bytes / (1024 * 1024)} Mio`;
   let tokenImage = '';
-  editorFields.push(tokenInput, tokenRemove);
   function displayToken(value) {
     tokenImage=value; tokenPreview.hidden=!value;
     if(value)tokenPreview.src=value;else tokenPreview.removeAttribute('src');
@@ -105,20 +110,21 @@
   async function readToken(file) {
     const note=getActiveNote();
     if(!file || !note?.canEdit || note.options?.type!=='character')return;
-    if(!['image/png','image/jpeg','image/gif','image/webp'].includes(file.type) || file.size>2097152) {
+    if(!imageTypes.includes(file.type) || file.size>imageLimit) {
       setSaveStatus('Choisissez une image de jeton PNG, JPEG, GIF ou WebP de 2 Mo maximum.','error');return;
     }
     const id=note.id;
     const value=await readEditorImage(file);
     if(getActiveNote()?.id!==id)return;
-    displayToken(value);handleEditorChange({target:tokenInput});
+    displayToken(value); storeEditorChanges();
   }
   tokenInput.addEventListener('change',()=>readToken(tokenInput.files[0]).catch(()=>setSaveStatus('Lecture du jeton impossible.','error')));
-  tokenRemove.addEventListener('click',()=>{displayToken('');tokenInput.value='';handleEditorChange({target:tokenRemove});});
+  tokenRemove.addEventListener('click',()=>{displayToken('');tokenInput.value='';storeEditorChanges();});
   tokenDrop.addEventListener('dragover',event=>event.preventDefault());
   tokenDrop.addEventListener('drop',event=>{event.preventDefault();readToken(event.dataTransfer.files[0]).catch(()=>setSaveStatus('Lecture du jeton impossible.','error'));});
   let documentImage = '';
-  editorFields.push(readers, editors, imageInput, removeImage);
+  let portraitRequest = 0;
+  editorFields.push(readers, editors);
   if (gmNotes) editorFields.push(gmNotes);
   const richEditors = new Map();
   function richEditor(textarea) {
@@ -164,32 +170,69 @@
     imagePreview.hidden = !value;
     if (value) imagePreview.src = value; else imagePreview.removeAttribute('src');
   }
-  async function readEditorImage(file) {
+  async function readEditorImage(file, prepareImage = null) {
     const draft = state.draft;
     if (draft) draft.pendingImages++;
     try {
+      const image = prepareImage ? await prepareImage(file) : file;
       return await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = reject;
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(image);
       });
     } finally {
       if (draft) draft.pendingImages--;
     }
   }
-  async function readImage(file) {
-    if (!file || !getActiveNote()?.canEdit) return;
-    if (!['image/png','image/jpeg','image/gif','image/webp'].includes(file.type) || file.size > 2097152) {
-      setSaveStatus('Choisissez une image PNG, JPEG, GIF ou WebP de 2 Mo maximum.', 'error'); return;
+  async function compressPortrait(file, limit) {
+    const bitmap = await createImageBitmap(file);
+    try {
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      for (const maxSide of [1600, 1024]) {
+        const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        const image = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', .9));
+        if (image && image.size <= limit) return image;
+      }
+      throw new Error('L’image reste trop volumineuse après optimisation.');
+    } finally {
+      bitmap.close();
     }
-    const noteId = state.activeNoteId;
-    const value = await readEditorImage(file);
-    if (state.activeNoteId !== noteId) return;
-    displayImage(value); handleEditorChange({target:imageInput});
   }
-  imageInput.addEventListener('change', () => readImage(imageInput.files[0]).catch(() => setSaveStatus('Lecture de l’image impossible.', 'error')));
-  removeImage.addEventListener('click', () => { displayImage(''); handleEditorChange({target:removeImage}); });
+  async function readImage(file) {
+    const note = getActiveNote();
+    if (!file || !note?.canEdit) return;
+    const request = ++portraitRequest;
+    const noteId = state.activeNoteId;
+    const limit = note.codexEntryId ? imageLimit : portraitLimit;
+    if (!imageTypes.includes(file.type)) {
+      setSaveStatus('Choisissez une image PNG, JPEG, GIF ou WebP.', 'error');
+      return;
+    }
+    const sourceLimit = file.type === 'image/gif' ? limit : portraitSourceLimit;
+    if (file.size > sourceLimit) {
+      setSaveStatus(`Choisissez une image de ${inMib(sourceLimit)} maximum pour ce format.`, 'error');
+      return;
+    }
+    const needsCompression = file.size > limit;
+    if (needsCompression) setSaveStatus('Optimisation de l’image…', 'pending');
+    try {
+      const value = await readEditorImage(file, needsCompression ? image => compressPortrait(image, limit) : null);
+      if (request !== portraitRequest || state.activeNoteId !== noteId) return;
+      displayImage(value);
+      storeEditorChanges();
+    } catch {
+      if (request === portraitRequest && state.activeNoteId === noteId) {
+        setSaveStatus(needsCompression ? 'Impossible d’optimiser cette image. Essayez un fichier plus léger.' : 'Lecture de l’image impossible.', 'error');
+      }
+    }
+  }
+  imageInput.addEventListener('change', () => readImage(imageInput.files[0]));
+  removeImage.addEventListener('click', () => { portraitRequest++; displayImage(''); imageInput.value = ''; storeEditorChanges(); });
   const drop = document.querySelector('#document-drop');
   const summary=document.createElement('div');summary.className='character-summary';
   const images=document.createElement('div');images.className='character-images';
@@ -198,7 +241,7 @@
   images.append(drop,tokenDrop);
   details.append(titleInput.closest('.notes-editor-topbar'),readers.closest('.document-permissions'),tagsInput.closest('.notes-metadata-row'));
   drop.addEventListener('dragover', event => event.preventDefault());
-  drop.addEventListener('drop', event => { event.preventDefault(); readImage(event.dataTransfer.files[0]).catch(() => setSaveStatus('Lecture impossible.', 'error')); });
+  drop.addEventListener('drop', event => { event.preventDefault(); readImage(event.dataTransfer.files[0]); });
   createButton.addEventListener('click', createNote);
   searchInput.addEventListener('input', renderNotesList);
   visibilityFilter.addEventListener('change', renderNotesList);
@@ -427,7 +470,7 @@
 
   async function apiRequest(method, body = null, afterLibrary = null) {
     const url = method === 'GET'
-      ? `${apiUrl}?campaignId=${encodeURIComponent(campaignId)}${requestedDocument ? '&noteId=' + requestedDocument : ''}${afterLibrary ? '&afterLibrary=' + encodeURIComponent(afterLibrary) : ''}`
+      ? `${apiUrl}?campaignId=${encodeURIComponent(campaignId)}${requestedDocument ? '&noteId=' + requestedDocument : '&imageLinks=1'}${afterLibrary ? '&afterLibrary=' + encodeURIComponent(afterLibrary) : ''}`
       : apiUrl;
     const options = {
       method,
@@ -455,6 +498,7 @@
   }
 
   async function readResponse(response) {
+    if (response.status === 413) throw new Error('Le serveur refuse cet envoi car il est trop volumineux.');
     let payload;
 
     try {
@@ -578,7 +622,9 @@
     tokenDrop.hidden=!character;
     titleInput.closest('.field-group').querySelector('label').textContent=character?'Nom':'Titre';
     editors.closest('.field-group').querySelector('label').textContent=character?'Peut être modifié & contrôlé par':'Peut être modifié par';
-    drop.querySelector('label').textContent=character?'Avatar — déposer une image ou choisir un fichier':'Déposer une image ou choisir un fichier (PNG, JPEG, GIF, WebP · 2 Mo maximum)';
+    drop.querySelector('label').textContent=character?'Avatar — déposer une image ou choisir un fichier':'Déposer une image ou choisir un fichier';
+    const limit = inMib(note.codexEntryId ? imageLimit : portraitLimit);
+    imageHelp.textContent = `PNG, JPEG ou WebP jusqu’à ${inMib(portraitSourceLimit)} avec optimisation au-delà de ${limit}. GIF jusqu’à ${limit}.`;
     contentInput.closest('.notes-content-field').querySelector('label').textContent=character?'Bio & Info':'Description & notes';
     displayToken(options.tokenImage || '');
     tokenInput.value='';tokenInput.disabled=tokenRemove.disabled=!note.canEdit;
@@ -633,7 +679,10 @@
 
   function handleEditorChange(event) {
     if (!editorFields.includes(event.target)) return;
+    storeEditorChanges();
+  }
 
+  function storeEditorChanges() {
     const note = getActiveNote();
     if (!note || !note.canEdit || state.conflicts.has(note.id)) return;
 
@@ -642,7 +691,7 @@
 
     note.tags = parseTags(tagsInput.value);
     note.content = contentInput.value;
-    if (note.codexEntryId) note.savedPublishedImage ??= note.options?.image || '';
+    note.savedImage ??= note.options?.image || '';
     note.options = {
       readers: [...readers.selectedOptions].map(option => option.value),
       editors: [...editors.selectedOptions].map(option => option.value),
@@ -713,7 +762,7 @@
     const noteId = note.id;
     const editVersion = state.editVersions.get(noteId) ?? 0;
     const options = {...note.options};
-    if (note.codexEntryId && options.image === note.savedPublishedImage) delete options.image;
+    if (options.image === note.savedImage) delete options.image;
     const requestBody = {
       action: 'update',
       campaignId,
@@ -743,7 +792,7 @@
         } else {
           state.notes[currentIndex].revision = savedNote.revision;
           state.notes[currentIndex].updatedAt = savedNote.updatedAt;
-          if (savedNote.codexEntryId) state.notes[currentIndex].savedPublishedImage = savedNote.options?.image || '';
+          state.notes[currentIndex].savedImage = savedNote.options?.image || '';
           scheduleSave();
         }
 
