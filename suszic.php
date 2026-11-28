@@ -38,7 +38,7 @@ header('Cache-Control: no-store');
               <button id="broadcast-copy" type="button" class="secondary-button">Copier le lien</button>
               <span id="broadcast-copy-status" role="status"></span>
             </div>
-            <a class="secondary-button" href="<?= mapEscape(mapUrl()) ?>">Sus20</a>
+            <a class="secondary-button" href="<?= mapEscape(mapUrl('/index.php')) ?>">Sus20</a>
             <button id="theme-toggle" type="button" class="secondary-button">Mode sombre</button>
             <button id="campaign-switch" type="button" class="secondary-button">Changer de projet audio</button>
             <form method="post" action="<?= mapEscape(mapUrl('/logout.php')) ?>">
